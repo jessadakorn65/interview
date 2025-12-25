@@ -1,0 +1,395 @@
+/** =========================
+ *  CONFIG
+ *  ========================= */
+const SPREADSHEET_ID = "1ozLZm32sh2VNe0N2PTgFFDLcdZ4kEW7UDhaGCFnLgEc";
+const SHEET_NAME = "ชีต1";
+
+const QUEUE_KEY = "ASSESS_QUEUE_V1";
+const AUTO_FLUSH_AT = 10;     // ถึง 10 -> flush อัตโนมัติ
+const MAX_FLUSH_ITEMS = 50;   // flush ครั้งละไม่เกิน 50 กัน timeout
+
+// ✅ LOG
+const LOG_SHEET_NAME = "LOG"; // จะสร้างแท็บนี้อัตโนมัติ ถ้าไม่มี
+const ENABLE_SHEET_LOG = true;
+
+/** =========================
+ *  ✅ Image Normalizer (สำหรับคอลัมน์ Image)
+ *  รองรับ: URL / dataURL / Drive open?id / Drive file/d/.../view / Drive uc?id / fileId ล้วน / หลายลิงก์คั่น comma
+ *  ========================= */
+function normalizeImage_(v) {
+  if (v == null) return "";
+
+  // เผื่อมีเคสเป็น array/object (บางที export เป็น JSON string)
+  if (Array.isArray(v)) v = v[0];
+  if (typeof v === "object") {
+    for (const k of ["url", "link", "src", "fileUrl", "downloadUrl", "id", "fileId"]) {
+      if (v && v[k]) return normalizeImage_(v[k]);
+    }
+    return "";
+  }
+
+  let s = String(v).trim();
+  if (!s) return "";
+
+  // เผื่อเป็น JSON string
+  if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
+    try { return normalizeImage_(JSON.parse(s)); } catch (e) { /* ignore */ }
+  }
+
+  // ถ้าเป็นหลายลิงก์คั่นด้วย comma (Forms upload หลายไฟล์)
+  if (s.includes(",")) s = s.split(",")[0].trim();
+
+  // data URL
+  if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(s)) return s;
+
+  // drive file view: /file/d/<id>/view
+  let m = s.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+  // drive open?id=<id>
+  m = s.match(/drive\.google\.com\/open\?id=([^&]+)/);
+  if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+  // drive uc?...id=<id>
+  m = s.match(/drive\.google\.com\/uc\?.*id=([^&]+)/);
+  if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+  // drive fileId ล้วน ๆ
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(s)) {
+    return `https://drive.google.com/uc?export=view&id=${s}`;
+  }
+
+  // url ปกติ
+  if (/^https?:\/\//i.test(s)) return s;
+
+  return s;
+}
+
+/** =========================
+ *  WEB APP ENTRY
+ *  ========================= */
+function doGet(e) {
+  const action = String(e?.parameter?.action || "").toLowerCase();
+
+  if (!action) {
+    const t = HtmlService.createTemplateFromFile("Interview");
+    t.WEBAPP_URL = ScriptApp.getService().getUrl();
+    return t.evaluate()
+      .setTitle("Interview System")
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
+  try {
+    if (action === "export") {
+      const rows = exportAllRows_();
+      return jsonOut_({ ok: true, rows });
+    }
+
+    if (action === "search") {
+      const id = String(e.parameter.id || "").trim();
+      if (!id) return jsonOut_({ ok: false, error: "missing id" });
+      const student = findStudentById_(id);
+      return jsonOut_({ ok: true, data: student || null });
+    }
+
+    if (action === "update") {
+      const id = String(e.parameter.id || "").trim();
+      const status = String(e.parameter.status || "").trim();
+      const comment = String(e.parameter.comment || "").trim();
+      if (!id || !status) return jsonOut_({ ok: false, error: "missing id/status" });
+
+      // ใส่เข้าคิว server
+      const res = enqueue_({ id, status, comment, ts: Date.now() });
+
+      // auto flush ถ้าถึง 10
+      if (res.queueSize >= AUTO_FLUSH_AT) {
+        const f = flush_(false);
+        return jsonOut_({
+          ok: true,
+          queued: true,
+          queueSize: res.queueSize,
+          flushed: f.flushed,
+          skipped: f.skipped,
+          remaining: f.remaining,
+          skippedIds: f.skippedIds || []
+        });
+      }
+
+      return jsonOut_({ ok: true, queued: true, queueSize: res.queueSize });
+    }
+
+    if (action === "flush") {
+      const force = String(e.parameter.force || "") === "1" || String(e.parameter.force || "").toLowerCase() === "true";
+      const f = flush_(force);
+      return jsonOut_({
+        ok: true,
+        flushed: f.flushed,
+        skipped: f.skipped,
+        remaining: f.remaining,
+        skippedIds: f.skippedIds || []
+      });
+    }
+
+    if (action === "status") {
+      const q = readQueue_();
+      return jsonOut_({ ok: true, queueSize: Object.keys(q).length });
+    }
+
+    return jsonOut_({ ok: false, error: "unknown action: " + action });
+  } catch (err) {
+    log_("ERROR", "doGet exception", { error: err.message, action });
+    return jsonOut_({ ok: false, error: "Exception: " + err.message });
+  }
+}
+
+/** =========================
+ *  QUEUE
+ *  ========================= */
+function enqueue_(item) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const q = readQueue_();
+    const id = String(item.id).trim();
+
+    q[id] = {
+      id,
+      status: String(item.status || ""),
+      comment: String(item.comment || ""),
+      ts: Number(item.ts || Date.now())
+    };
+
+    writeQueue_(q);
+    return { queueSize: Object.keys(q).length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function flush_(force) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    const q = readQueue_();
+    const keys = Object.keys(q);
+
+    if (keys.length === 0) return { flushed: 0, skipped: 0, remaining: 0, skippedIds: [] };
+    if (!force && keys.length < AUTO_FLUSH_AT) return { flushed: 0, skipped: 0, remaining: keys.length, skippedIds: [] };
+
+    // เรียงเก่าก่อน
+    keys.sort((a, b) => (q[a].ts || 0) - (q[b].ts || 0));
+
+    const takeKeys = keys.slice(0, Math.min(keys.length, MAX_FLUSH_ITEMS));
+    const items = takeKeys.map(k => q[k]);
+
+    const result = writeBatchToSheet_(items); // {updatedIds, skippedIds}
+    const updatedSet = new Set(result.updatedIds);
+
+    // ✅ ลบจากคิวเฉพาะที่อัปเดตสำเร็จจริง
+    for (const k of takeKeys) {
+      if (updatedSet.has(String(k))) delete q[k];
+    }
+    writeQueue_(q);
+
+    // ✅ LOG
+    if (result.skippedIds.length > 0) {
+      log_("WARN", "flush skipped ids (not found in sheet)", {
+        take: takeKeys.length,
+        flushed: result.updatedIds.length,
+        skipped: result.skippedIds.length,
+        skippedIds: result.skippedIds.slice(0, 50)
+      });
+    } else {
+      log_("INFO", "flush ok", { take: takeKeys.length, flushed: result.updatedIds.length });
+    }
+
+    return {
+      flushed: result.updatedIds.length,
+      skipped: result.skippedIds.length,
+      remaining: Object.keys(q).length,
+      skippedIds: result.skippedIds
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** =========================
+ *  SHEET
+ *  ========================= */
+function getSheet_() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName(SHEET_NAME);
+  if (!sh) throw new Error("Sheet tab not found: " + SHEET_NAME);
+  return sh;
+}
+
+function readHeader_(sh) {
+  const lastCol = sh.getLastColumn();
+  const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(x => String(x).trim());
+  const colIndex = {};
+  header.forEach((name, i) => colIndex[name] = i); // 0-based
+  return { header, colIndex, lastCol };
+}
+
+function ensureCols_(sh, colIndex, lastCol) {
+  const needCols = ["Status", "Comment", "TimestampDepa"];
+  let added = 0;
+  for (const c of needCols) {
+    if (colIndex[c] == null) {
+      sh.getRange(1, lastCol + 1 + added).setValue(c);
+      colIndex[c] = lastCol + added;
+      added++;
+    }
+  }
+  return sh.getLastColumn();
+}
+
+// ✅ เปลี่ยนให้ return updatedIds/skippedIds
+function writeBatchToSheet_(items) {
+  const sh = getSheet_();
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) throw new Error("Sheet has no data rows.");
+
+  const { colIndex, lastCol } = readHeader_(sh);
+  if (colIndex["ID"] == null) throw new Error("Missing column header: ID");
+
+  const newLastCol = ensureCols_(sh, colIndex, lastCol);
+
+  const dataRange = sh.getRange(2, 1, lastRow - 1, newLastCol);
+  const values = dataRange.getValues();
+
+  const idCol = colIndex["ID"];
+  const statusCol = colIndex["Status"];
+  const commentCol = colIndex["Comment"];
+  const tsCol = colIndex["TimestampDepa"];
+  const now = new Date();
+
+  const rowById = new Map();
+  for (let r = 0; r < values.length; r++) {
+    const id = String(values[r][idCol]).trim();
+    if (id) rowById.set(id, r);
+  }
+
+  const updatedIds = [];
+  const skippedIds = [];
+
+  for (const it of items) {
+    const id = String(it.id || "").trim();
+    if (!id) { skippedIds.push(id); continue; }
+
+    const ridx = rowById.get(id);
+    if (ridx == null) {
+      skippedIds.push(id);
+      continue;
+    }
+
+    values[ridx][statusCol] = String(it.status || "");
+    values[ridx][commentCol] = String(it.comment || "");
+    values[ridx][tsCol] = now;
+    updatedIds.push(id);
+  }
+
+  dataRange.setValues(values);
+  return { updatedIds, skippedIds };
+}
+
+function findStudentById_(id) {
+  const sh = getSheet_();
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return null;
+
+  const { header, colIndex, lastCol } = readHeader_(sh);
+  if (colIndex["ID"] == null) throw new Error("Missing column header: ID");
+
+  const idCol1 = colIndex["ID"] + 1;
+  const ids = sh.getRange(2, idCol1, lastRow - 1, 1).getValues();
+
+  let foundRow = -1;
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() === String(id).trim()) { foundRow = i + 2; break; }
+  }
+  if (foundRow === -1) return null;
+
+  const rowValues = sh.getRange(foundRow, 1, 1, lastCol).getValues()[0];
+  const obj = {};
+  for (let i = 0; i < header.length; i++) obj[header[i]] = rowValues[i];
+
+  // ✅ normalize รูปให้พร้อมแสดง
+  if (obj.Image != null) obj.Image = normalizeImage_(obj.Image);
+
+  return obj;
+}
+
+function exportAllRows_() {
+  const sh = getSheet_();
+  const lastRow = sh.getLastRow();
+  const lastCol = sh.getLastColumn();
+  if (lastRow < 2) return [];
+
+  const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(x => String(x).trim());
+  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  return values.map(row => {
+    const obj = {};
+    for (let i = 0; i < header.length; i++) obj[header[i]] = row[i];
+
+    // ✅ normalize รูปให้พร้อมแสดง
+    if (obj.Image != null) obj.Image = normalizeImage_(obj.Image);
+
+    return obj;
+  });
+}
+
+/** =========================
+ *  PROPERTIES
+ *  ========================= */
+function readQueue_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty(QUEUE_KEY);
+  if (!raw) return {};
+  try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
+}
+
+function writeQueue_(obj) {
+  PropertiesService.getScriptProperties().setProperty(QUEUE_KEY, JSON.stringify(obj || {}));
+}
+
+/** =========================
+ *  LOG
+ *  ========================= */
+function getLogSheet_() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sh = ss.getSheetByName(LOG_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(LOG_SHEET_NAME);
+    sh.appendRow(["Timestamp", "Level", "Message", "Payload(JSON)"]);
+  }
+  return sh;
+}
+
+function log_(level, message, payload) {
+  const ts = new Date();
+  const p = payload ? JSON.stringify(payload) : "";
+
+  // 1) execution log
+  Logger.log(`[${level}] ${message} ${p}`);
+
+  // 2) sheet log
+  if (ENABLE_SHEET_LOG) {
+    try {
+      const sh = getLogSheet_();
+      sh.appendRow([ts, level, message, p]);
+    } catch (e) {
+      Logger.log(`[ERROR] write log sheet failed: ${e.message}`);
+    }
+  }
+}
+
+/** =========================
+ *  OUTPUT
+ *  ========================= */
+function jsonOut_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
