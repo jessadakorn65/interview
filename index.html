@@ -1,0 +1,1557 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Candidate Assessment System</title>
+
+    <!-- Font: Prompt -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #0B0B08;
+            --card: rgba(255, 255, 255, .96);
+            --primary: #F59E0B;
+            --success: #22C55E;
+            --danger: #EF4444;
+            --text: #1C1917;
+            --muted: #78716C;
+            --radius-xl: 28px;
+            --radius-lg: 20px;
+            --radius-md: 14px;
+            --shadow-md: 0 12px 30px rgba(0, 0, 0, .18);
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Prompt', sans-serif;
+            color: #fff;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at 20% 10%, #FBBF24 0%, transparent 40%),
+                radial-gradient(circle at 80% 90%, #F59E0B 0%, transparent 40%),
+                var(--bg);
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(.95)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1)
+            }
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: rgba(15, 23, 42, .85);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, .08);
+        }
+
+        .brand {
+            max-width: 1200px;
+            margin: auto;
+            padding: 18px 24px;
+            display: flex;
+            gap: 16px;
+            align-items: center
+        }
+
+        .title .h1 {
+            font-size: 20px;
+            font-weight: 800
+        }
+
+        .title .h2 {
+            font-size: 12px;
+            color: #CBD5F5
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px 60px
+        }
+
+        .center {
+            min-height: 80vh;
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+
+        .searchCard {
+            width: 100%;
+            max-width: 460px;
+            background: rgba(255, 255, 255, .92);
+            backdrop-filter: blur(24px);
+            color: var(--text);
+            border-radius: 32px;
+            padding: 48px 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, .25), 0 0 0 1px rgba(255, 255, 255, .4) inset;
+            border: 1px solid rgba(255, 255, 255, .6);
+            transition: transform .3s;
+        }
+
+        .searchCard:hover {
+            transform: translateY(-4px)
+        }
+
+        .searchHead {
+            font-size: 42px;
+            font-weight: 900;
+            text-align: center;
+            margin-bottom: 24px;
+            background: linear-gradient(to right, #1E293B, #334155);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1.5px;
+        }
+
+        .searchSub {
+            text-align: center;
+            color: #64748B;
+            margin-bottom: 32px;
+            font-size: 14px
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 18px 20px;
+            margin-top: 6px;
+            border-radius: var(--radius-md);
+            border: 2px solid #E5E7EB;
+            font-size: 17px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, .9);
+            transition: all .25s ease;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(245, 158, 11, .2);
+            background: #fff;
+            transform: scale(1.01);
+            outline: none;
+        }
+
+        button.primary {
+            margin-top: 24px;
+            width: 100%;
+            padding: 16px;
+            border-radius: 16px;
+            border: none;
+            background: #1F2937;
+            color: #fff;
+            font-weight: 800;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all .3s;
+            letter-spacing: .5px;
+            text-transform: uppercase;
+        }
+
+        button.primary:hover {
+            transform: translateY(-3px) scale(1.01);
+            background: #111827
+        }
+
+        button.primary:active {
+            transform: translateY(1px) scale(.99)
+        }
+
+        .inputWrapper {
+            position: relative;
+            margin-top: 12px
+        }
+
+        .inputIcon {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 24px;
+            color: #94A3B8;
+            pointer-events: none
+        }
+
+        #idInput1 {
+            padding-left: 54px;
+            background: #F8FAFC;
+            border: 2px solid transparent;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, .03)
+        }
+
+        .hint {
+            margin-top: 18px;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.45;
+            background: rgba(241, 245, 249, .7);
+            border: 1px solid rgba(226, 232, 240, .8);
+            padding: 12px 14px;
+            border-radius: 14px;
+        }
+
+        .msg {
+            margin-top: 12px;
+            font-weight: 700;
+            font-size: 13px
+        }
+
+        .msg.ok {
+            color: #065F46
+        }
+
+        .msg.warn {
+            color: #92400E
+        }
+
+        .topbar {
+            background: rgba(255, 255, 255, .95);
+            color: var(--text);
+            border-radius: var(--radius-lg);
+            padding: 16px;
+            margin-bottom: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            box-shadow: var(--shadow-md);
+            align-items: center;
+        }
+
+        .leftTools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center
+        }
+
+        .pillBtn {
+            padding: 10px 18px;
+            border-radius: 999px;
+            border: none;
+            font-weight: 800;
+            cursor: pointer
+        }
+
+        .pillBtn.gray {
+            background: #E5E7EB
+        }
+
+        .pillBtn.black {
+            background: #0F172A;
+            color: #fff
+        }
+
+        .badge {
+            background: #F1F5F9;
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 700;
+            border: 1px solid #E2E8F0
+        }
+
+        .searchBar {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            background: #fff;
+            padding: 6px 6px 6px 20px;
+            border-radius: 999px;
+            border: 1px solid #E2E8F0;
+            min-width: 260px;
+        }
+
+        .searchBar input {
+            border: none;
+            outline: none;
+            font-size: 15px;
+            width: 100%;
+            background: transparent;
+            font-weight: 600;
+            color: #334155
+        }
+
+        .searchBar button#btnAdd {
+            background: #F1F5F9;
+            border: none;
+            border-radius: 50%;
+            width: 42px;
+            height: 42px;
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            font-size: 18px;
+            flex-shrink: 0
+        }
+
+        #msg2 {
+            display: none !important
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            padding-bottom: 40px
+        }
+
+        @media (max-width:1100px) {
+            .grid {
+                grid-template-columns: repeat(auto-fill, minmax(220px, 1fr))
+            }
+        }
+
+        .card {
+            background: #FDFBF7;
+            border-radius: 20px;
+            border: 2px solid #000;
+            box-shadow: 6px 8px 0px rgba(0, 0, 0, .25);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            animation: slideUp .5s cubic-bezier(.34, 1.56, .64, 1) backwards;
+            transition: transform .3s;
+        }
+
+        .card:hover {
+            transform: translateY(-8px) rotate(-1deg)
+        }
+
+        .cardHeader {
+            background-color: #1F2937;
+            padding: 16px 10px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #fff
+        }
+
+        .avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #ccc;
+            overflow: hidden;
+            margin-bottom: 6px
+        }
+
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover
+        }
+
+        .headerName {
+            font-size: 16px;
+            font-weight: 500;
+            text-align: center;
+            margin-bottom: 4px
+        }
+
+        .headerFlag {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 300;
+            opacity: .95
+        }
+
+        .flagImg {
+            width: 22px;
+            height: 16px;
+            border-radius: 3px;
+            border: 1px solid rgba(255, 255, 255, .35);
+            object-fit: cover
+        }
+
+        .statusStrip {
+            background-color: #FFC107;
+            color: #000;
+            text-align: center;
+            font-weight: 600;
+            font-size: 14px;
+            padding: 8px 0;
+            width: 100%
+        }
+
+        .cardBody {
+            background-color: #FDFBF7;
+            padding: 12px 14px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            color: #333;
+            text-align: left
+        }
+
+        .dataRow {
+            display: flex;
+            align-items: baseline;
+            margin-bottom: 3px;
+            font-size: 13px;
+            line-height: 1.3
+        }
+
+        .dataLabel {
+            color: #9CA3AF;
+            width: 85px;
+            flex-shrink: 0;
+            font-weight: 400
+        }
+
+        .dataValue {
+            color: #000;
+            font-weight: 600
+        }
+
+        .divider {
+            height: 1px;
+            background: #E5E7EB;
+            margin: 8px 0;
+            width: 100%
+        }
+
+        textarea {
+            width: 100%;
+            margin-bottom: 10px;
+            resize: none;
+            min-height: 42px;
+            border-radius: 6px;
+            border: 1px solid #D1D5DB;
+            padding: 8px;
+            font-size: 12px;
+            background: #fff;
+            color: #374151
+        }
+
+        .actions {
+            display: flex;
+            justify-content: space-around;
+            margin-top: auto;
+            padding-top: 4px
+        }
+
+        .actionGroup {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer
+        }
+
+        .circleBtn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            transition: all .2s;
+            box-shadow: 0 4px 0px rgba(0, 0, 0, .2);
+            cursor: pointer;
+        }
+
+        .circleBtn:hover {
+            transform: translateY(-3px) scale(1.08)
+        }
+
+        .circleBtn:active {
+            transform: translateY(2px) scale(.98);
+            box-shadow: 0 0px 0px rgba(0, 0, 0, .2)
+        }
+
+        .circleBtn svg {
+            width: 24px;
+            height: 24px;
+            fill: #fff;
+            stroke: #fff;
+            stroke-width: 2
+        }
+
+        .btnLabel {
+            font-size: 12px;
+            font-weight: 700;
+            color: #1F2937
+        }
+
+        .okBtn {
+            background: #10B981
+        }
+
+        .badBtn {
+            background: #EF4444
+        }
+
+        .userIcon {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            position: relative;
+            background: #d9d9d9;
+            border: 6px solid #4b4b4b;
+            margin-bottom: 8px;
+            flex-shrink: 0
+        }
+
+        .userIcon::before {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 18%;
+            transform: translateX(-50%);
+            width: 34%;
+            height: 34%;
+            border-radius: 50%;
+            border: 5px solid #4b4b4b;
+            background: transparent
+        }
+
+        .userIcon::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            bottom: 16%;
+            transform: translateX(-50%);
+            width: 56%;
+            height: 38%;
+            border-radius: 999px 999px 28px 28px;
+            border: 5px solid #4b4b4b;
+            border-bottom: 0;
+            background: transparent
+        }
+
+        .xTop {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            background: rgba(0, 0, 0, .2);
+            color: rgba(255, 255, 255, .8);
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            z-index: 20;
+            font-size: 16px;
+            line-height: 1
+        }
+
+        .xTop:hover {
+            background: #EF4444;
+            color: #fff
+        }
+
+        .footerHint {
+            margin-top: 10px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, .85);
+            opacity: .95
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0F172A;
+            color: #fff;
+            padding: 12px 26px;
+            border-radius: 999px;
+            font-weight: 700;
+            display: none;
+            z-index: 9999
+        }
+
+        .toast.show {
+            display: block
+        }
+
+        .d-none {
+            display: none !important;
+        }
+
+        .editBtn {
+            background: #3B82F6;
+        }
+
+        textarea:disabled {
+            background: #f3f4f6;
+            cursor: not-allowed;
+        }
+
+        /* Custom Alert Modal */
+        .custom-alert-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .2s;
+        }
+
+        .custom-alert-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .custom-alert-box {
+            background: #fff;
+            width: 90%;
+            max-width: 400px;
+            border-radius: 20px;
+            padding: 24px;
+            text-align: center;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, .1), 0 10px 10px -5px rgba(0, 0, 0, .04);
+            transform: scale(0.95);
+            transition: transform .2s;
+            color: #1F2937;
+        }
+
+        .custom-alert-overlay.show .custom-alert-box {
+            transform: scale(1);
+        }
+
+        .custom-alert-icon {
+            font-size: 48px;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .custom-alert-title {
+            font-size: 20px;
+            font-weight: 800;
+            margin-bottom: 8px;
+            color: #1F2937;
+        }
+
+        .custom-alert-msg {
+            font-size: 15px;
+            color: #4B5563;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .custom-alert-btn {
+            background: #EF4444;
+            color: #fff;
+            border: none;
+            padding: 12px 32px;
+            font-size: 16px;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            width: 100%;
+            transition: background .2s;
+        }
+
+        .custom-alert-btn:hover {
+            background: #DC2626;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="brand">
+            <div class="title">
+                <div class="h1">Summer Camp Candidate Assessment System</div>
+                <div class="h2">Digital Economy Promotion Agency</div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- PAGE 1 -->
+        <section id="page1" class="center">
+            <div class="searchCard">
+                <div class="searchHead">Search ID</div>
+                <div class="searchSub">ป้อนรหัสนักเรียนเพื่อค้นหาข้อมูล</div>
+
+                <div class="inputWrapper">
+                    <div class="inputIcon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </div>
+                    <input id="idInput1" type="text" placeholder="1001, 1002...">
+                </div>
+
+                <button class="primary" id="btnGo">SEARCH</button>
+                <div id="msg1" class="msg"></div>
+
+                <div class="hint">
+                    - ระบบจะแสดงการ์ดในรอบนี้ได้สูงสุด <b>5 คน</b><br />
+                    - กด Approve/Disapprove แล้วการ์ดจะหายทันที → เข้าคิวทันที<br />
+                    - คิวครบ <b>10</b> คน → ส่งขึ้นชีตอัตโนมัติ<br />
+                    - ไม่ครบ 10 แต่ค้างนาน → ส่งอัตโนมัติ (stale flush)
+                </div>
+
+                <button class="primary" id="btnPreload">โหลดข้อมูลล่วงหน้า (ครั้งเดียว)</button>
+            </div>
+        </section>
+
+        <!-- PAGE 2 -->
+        <section id="page2" style="display:none;">
+            <div class="topbar">
+                <div class="leftTools">
+                    <button class="pillBtn gray" id="btnResetRound">รีเซ็ตรอบ</button>
+                    <button class="pillBtn black" id="btnForceFlush">ส่งคิวตอนนี้</button>
+                    <span class="badge">คิว: <b id="queueCount">0</b>/10</span>
+                    <span class="badge">สถานะส่ง: <b id="sendStatus">พร้อม</b></span>
+                </div>
+
+                <div class="searchBar">
+                    <input id="idInput2" type="text" placeholder="กรอก ID เพิ่มในรอบนี้ (คั่นด้วย , ได้)">
+                    <button class="iconBtn" id="btnAdd">🔍</button>
+                </div>
+            </div>
+
+            <div id="msg2" class="msg"></div>
+            <div class="grid" id="cards"></div>
+
+            <div class="footerHint">
+                * คิวเก็บในเครื่อง (localStorage) รีโหลดหน้าไม่หาย • ครบ 10 ส่งอัตโนมัติ • ไม่ครบ 10
+                แต่ค้างนานก็ส่งอัตโนมัติ • slot กันหลายเครื่องยิงพร้อมกัน
+            </div>
+        </section>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <!-- Custom Alert Modal -->
+    <div class="custom-alert-overlay" id="customAlert">
+        <div class="custom-alert-box">
+            <span class="custom-alert-icon">⚠️</span>
+            <div class="custom-alert-title" id="customAlertTitle">Not Found</div>
+            <div class="custom-alert-msg" id="customAlertMsg">Detail here</div>
+            <button class="custom-alert-btn" id="customAlertBtn">OK</button>
+        </div>
+    </div>
+
+    <script>
+        /* =========================
+           CONFIG (แก้ตรงนี้)
+           ========================= */
+        // ✅ ใส่ URL /exec ของ Web App (ของคุณเอง)
+        const GAS_BASE = "https://script.google.com/macros/s/AKfycbwzg8g6V5k8SXHqtkbFY9Sc-5dbqAxjm5ksS2RVXpvFaYxNBidNNt1dhoDNAFD-qqlHcA/exec";
+
+        /* =========================
+           SETTINGS
+           ========================= */
+        const MAX_PER_ROUND = 5;
+        const FLUSH_AT = 10;
+
+        // ✅ ไม่ครบ 10 แต่ค้างนาน -> ส่งอัตโนมัติ
+        const STALE_FLUSH_MS = 3 * 60 * 1000; // 3 นาที (ปรับได้)
+
+        // ✅ Adaptive/backoff
+        const RATE = {
+            startDelayMs: 1800,
+            minDelayMs: 900,
+            maxDelayMs: 20000,
+            successSpeedup: 0.92,
+            failBackoff: 1.9,
+            jitterMs: 250
+        };
+
+        // ✅ Search cache ลดการยิงซ้ำ
+        const SEARCH_CACHE_TTL_MS = 3 * 60 * 1000; // 3 นาที
+
+        /* =========================
+           STATE
+           ========================= */
+        const QKEY = "ASSESS_PENDING_QUEUE_V2";
+        let pendingQueue = safeJson(localStorage.getItem(QKEY)) || [];
+        let roundCards = new Map();
+        let flushing = false;
+        let adaptiveDelayMs = RATE.startDelayMs;
+
+        /* =========================
+           DOM helpers
+           ========================= */
+        const $ = (id) => document.getElementById(id);
+        function safeJson(s) { try { return JSON.parse(s); } catch { return null; } }
+        function toast(msg) {
+            $("toast").textContent = msg;
+            $("toast").classList.add("show");
+            setTimeout(() => $("toast").classList.remove("show"), 2600);
+        }
+        function showAlert(title, msg) {
+            const t = $("customAlertTitle");
+            const m = $("customAlertMsg");
+            const box = $("customAlert");
+            if (t && m && box) {
+                t.textContent = title || "Alert";
+                m.innerHTML = msg || "";
+                box.classList.add("show");
+            }
+        }
+        if ($("customAlertBtn")) $("customAlertBtn").addEventListener("click", () => $("customAlert").classList.remove("show"));
+        if ($("customAlert")) $("customAlert").addEventListener("click", (e) => {
+            if (e.target === $("customAlert")) $("customAlert").classList.remove("show");
+        });
+        function setMsg(elId, type, text) {
+            const el = $(elId); if (!el) return;
+            el.className = "msg " + (type || "");
+            el.textContent = text || "";
+        }
+        function persistQueue() {
+            localStorage.setItem(QKEY, JSON.stringify(pendingQueue));
+            updateCounters();
+        }
+        function updateCounters() {
+            if ($("queueCount")) $("queueCount").textContent = String(pendingQueue.length);
+        }
+        function showPage2() {
+            $("page1").style.display = "none";
+            $("page2").style.display = "block";
+            $("idInput2").value = $("idInput1").value.trim();
+            updateCounters();
+        }
+
+        /* =========================
+           SEARCH CACHE
+           ========================= */
+        const searchCache = new Map();
+        function cacheGet(id) {
+            const e = searchCache.get(id);
+            if (!e) return undefined;
+            if (Date.now() - e.ts > SEARCH_CACHE_TTL_MS) { searchCache.delete(id); return undefined; }
+            return e.student; // อาจเป็น null
+        }
+        function cacheSet(id, student) {
+            searchCache.set(id, { ts: Date.now(), student });
+        }
+
+        /* =========================
+           Utilities
+           ========================= */
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+        function randInt(max) { return Math.floor(Math.random() * max); }
+        function isNetworkError(err) { return err && err.name === "TypeError"; }
+        function isRetryableStatus(code) { return code === 429 || code >= 500; }
+        function statusText(msg) {
+            const el = $("sendStatus"); if (!el) return;
+            el.textContent = msg || (flushing ? `ส่งอยู่ (~${Math.round(adaptiveDelayMs)}ms)` : "พร้อม");
+        }
+
+        /* =========================
+           SLOT-BASED FLUSH (กันหลายเครื่อง)
+           ========================= */
+        const CLIENT_KEY = "CLIENT_ID_V1";
+        let clientId = safeJson(localStorage.getItem(CLIENT_KEY));
+        if (!clientId) {
+            clientId = Math.floor(Math.random() * 1e9);
+            localStorage.setItem(CLIENT_KEY, JSON.stringify(clientId));
+        }
+        const SLOTS = 4;
+        const WINDOW_MS = 60000;
+        const SLOT_MS = WINDOW_MS / SLOTS;
+        const mySlot = clientId % SLOTS;
+
+        function canFlushNow() {
+            const t = Date.now() % WINDOW_MS;
+            const start = mySlot * SLOT_MS;
+            const end = start + SLOT_MS;
+            return t >= start && t < end;
+        }
+
+        /* =========================
+           stale flush (ไม่ครบ 10 ก็ไม่ค้าง)
+           ========================= */
+        function shouldFlushStale() {
+            if (pendingQueue.length === 0) return false;
+            const oldest = pendingQueue[0]?.ts || Date.now();
+            return (Date.now() - oldest) >= STALE_FLUSH_MS;
+        }
+
+        /* =========================
+           Queue upsert per ID
+           ========================= */
+        function upsertPending(item) {
+            const id = String(item.id);
+            pendingQueue = pendingQueue.filter(x => String(x.id) !== id);
+            pendingQueue.push(item);
+            persistQueue();
+        }
+
+        /* =========================
+           PRELOAD DB (โหลดทั้งชีต)
+           ========================= */
+        const DB_KEY = "CANDIDATE_DB_V1";
+        const DB_TS_KEY = "CANDIDATE_DB_TS_V1";
+        const DB_TTL_MS = 24 * 60 * 60 * 1000;
+
+        let dbMap = null;
+
+        function loadDbFromStorage() {
+            try { const raw = localStorage.getItem(DB_KEY); if (!raw) return null; return JSON.parse(raw); }
+            catch { return null; }
+        }
+        function saveDbToStorage(mapObj) {
+            localStorage.setItem(DB_KEY, JSON.stringify(mapObj));
+            localStorage.setItem(DB_TS_KEY, String(Date.now()));
+        }
+        function isDbFresh() {
+            const ts = Number(localStorage.getItem(DB_TS_KEY) || 0);
+            return ts && (Date.now() - ts) < DB_TTL_MS;
+        }
+        async function preloadDbIfNeeded(force = false) {
+            if (!force && dbMap && isDbFresh()) return;
+            if (!force) {
+                const fromStore = loadDbFromStorage();
+                if (fromStore && isDbFresh()) { dbMap = fromStore; return; }
+            }
+            const url = `${GAS_BASE}?action=export&ts=${Date.now()}`;
+            const r = await fetch(url, { method: "GET", cache: "no-store" });
+            const ct = (r.headers.get("content-type") || "").toLowerCase();
+            if (!ct.includes("application/json")) {
+                const t = await r.text().catch(() => "");
+                throw new Error(`PRELOAD FAIL: non-JSON (${r.status}) ${t.slice(0, 200)}`);
+            }
+            const data = await r.json().catch(() => null);
+            if (!r.ok || !data || data.ok !== true) throw new Error(`PRELOAD FAIL: ${r.status} ${data?.error || ""}`);
+            const rows = data.rows || data.data;
+            if (!Array.isArray(rows)) throw new Error("PRELOAD FAIL: rows missing");
+
+            const map = {};
+            for (const row of rows) {
+                if (!row) continue;
+                const idVal = row.ID ?? row.Id ?? row.id;
+                if (idVal == null) continue;
+                map[String(idVal).trim()] = row;
+            }
+            dbMap = map;
+            saveDbToStorage(map);
+        }
+
+        /* =========================
+           API (Apps Script via doGet)
+           ========================= */
+        function noCache() { return `ts=${Date.now()}`; }
+
+        async function apiSearchById(id) {
+            const key = String(id).trim();
+
+            if (dbMap && dbMap[key] !== undefined) return dbMap[key] || null;
+
+            const cached = cacheGet(key);
+            if (cached !== undefined) return cached;
+
+            const url = `${GAS_BASE}?action=search&id=${encodeURIComponent(key)}&${noCache()}`;
+            const r = await fetch(url, { method: "GET", cache: "no-store" });
+
+            const ct = (r.headers.get("content-type") || "").toLowerCase();
+            if (!ct.includes("application/json")) {
+                const t = await r.text().catch(() => "");
+                throw new Error(`SEARCH FAIL: non-JSON (${r.status}) ${t.slice(0, 200)}`);
+            }
+            const data = await r.json().catch(() => null);
+            if (!r.ok || !data || data.ok !== true) {
+                const e = new Error(`SEARCH FAIL: ${r.status} ${data?.error || ""}`);
+                e.code = r.status; throw e;
+            }
+            const student = data.data || data.student || null;
+            cacheSet(key, student);
+            return student;
+        }
+
+        async function apiUpdateOneById(id, status, comment) {
+            const url =
+                `${GAS_BASE}?action=update` +
+                `&id=${encodeURIComponent(String(id).trim())}` +
+                `&status=${encodeURIComponent(String(status || "").trim())}` +
+                `&comment=${encodeURIComponent(String(comment || ""))}` +
+                `&${noCache()}`;
+
+            const r = await fetch(url, { method: "GET", cache: "no-store" });
+
+            const ct = (r.headers.get("content-type") || "").toLowerCase();
+            if (!ct.includes("application/json")) {
+                const t = await r.text().catch(() => "");
+                throw new Error(`UPDATE FAIL: non-JSON (${r.status}) ${t.slice(0, 200)}`);
+            }
+            const data = await r.json().catch(() => null);
+            if (!r.ok || !data || data.ok !== true) {
+                const e = new Error(`UPDATE FAIL: ${r.status} ${data?.error || ""}`);
+                e.code = r.status; throw e;
+            }
+            return data;
+        }
+
+        async function apiForceFlush(force) {
+            const url = `${GAS_BASE}?action=flush&force=${force ? 1 : 0}&${noCache()}`;
+            const r = await fetch(url, { method: "GET", cache: "no-store" });
+            const ct = (r.headers.get("content-type") || "").toLowerCase();
+            if (!ct.includes("application/json")) {
+                const t = await r.text().catch(() => "");
+                throw new Error(`FLUSH FAIL: non-JSON (${r.status}) ${t.slice(0, 200)}`);
+            }
+            const data = await r.json().catch(() => null);
+            if (!r.ok || !data || data.ok !== true) {
+                const e = new Error(`FLUSH FAIL: ${r.status} ${data?.error || ""}`);
+                e.code = r.status; throw e;
+            }
+            return data;
+        }
+
+        /* =========================
+           Parsing IDs
+           ========================= */
+        function parseIds(raw) {
+            return raw.split(/[\s,]+/g).map(s => s.trim()).filter(Boolean).slice(0, 50);
+        }
+
+        /* =========================
+           Render Cards
+           ========================= */
+        function escapeHtml(str) {
+            return String(str ?? "")
+                .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+        }
+
+        function countryToISO2(countryRaw) {
+            const c = String(countryRaw || "").trim().toLowerCase();
+            if (!c) return "";
+            if (/^[a-z]{2}$/.test(c)) return c.toUpperCase();
+            const MAP = {
+                "thailand": "TH", "thai": "TH", "ประเทศไทย": "TH", "ไทย": "TH", "th": "TH",
+                "united states": "US", "usa": "US", "us": "US", "america": "US", "สหรัฐ": "US", "สหรัฐอเมริกา": "US",
+                "united kingdom": "GB", "uk": "GB", "gb": "GB", "อังกฤษ": "GB",
+                "china": "CN", "cn": "CN", "จีน": "CN",
+                "japan": "JP", "jp": "JP", "ญี่ปุ่น": "JP",
+                "korea": "KR", "south korea": "KR", "kr": "KR", "เกาหลี": "KR", "เกาหลีใต้": "KR",
+                "singapore": "SG", "sg": "SG", "สิงคโปร์": "SG",
+                "australia": "AU", "au": "AU", "ออสเตรเลีย": "AU",
+            };
+            return MAP[c] || "";
+        }
+
+        function flagUrlFromISO2(iso2) {
+            if (!iso2) return "";
+            return `https://flagcdn.com/w40/${String(iso2).toLowerCase()}.png`;
+        }
+
+        function pick(obj, keys, fallback = "") {
+            for (const k of keys) {
+                if (obj && obj[k] != null && String(obj[k]).trim() !== "") return obj[k];
+            }
+            return fallback;
+        }
+
+        function formatBirth(v) {
+            if (v == null || v === "") return "-";
+            if (typeof v === "string" && v.includes("T")) return v.slice(0, 10);
+            if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+            return String(v);
+        }
+
+        /* =========================
+           ✅ NEW: normalize Image src (URL / Drive link / Drive id / dataURL / base64 / array / object)
+           ========================= */
+        function normalizeImageSrc(v) {
+            if (v == null) return "";
+
+            // array -> first
+            if (Array.isArray(v)) return normalizeImageSrc(v[0]);
+
+            // object -> try common keys
+            if (typeof v === "object") {
+                for (const k of ["url", "link", "src", "fileUrl", "downloadUrl", "id", "fileId"]) {
+                    if (v[k]) return normalizeImageSrc(v[k]);
+                }
+                return "";
+            }
+
+            let s = String(v).trim();
+            if (!s) return "";
+
+            // JSON string -> parse
+            if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
+                try { return normalizeImageSrc(JSON.parse(s)); } catch { /* ignore */ }
+            }
+
+            // data URL
+            if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(s)) return s;
+
+            // base64 only (guess png)
+            if (/^[A-Za-z0-9+/]+={0,2}$/.test(s) && s.length > 200) {
+                return "data:image/png;base64," + s;
+            }
+
+            // drive file view
+            let m = s.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+            if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+            // drive open?id=
+            m = s.match(/drive\.google\.com\/open\?id=([^&]+)/);
+            if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+            // drive uc?...id=
+            m = s.match(/drive\.google\.com\/uc\?.*id=([^&]+)/);
+            if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+            // drive id only
+            if (/^[a-zA-Z0-9_-]{20,}$/.test(s)) {
+                return `https://drive.google.com/uc?export=view&id=${s}`;
+            }
+
+            // normal URL
+            if (/^https?:\/\//i.test(s)) return s;
+
+            return "";
+        }
+
+        function renderCard(student) {
+            const id = String(pick(student, ["ID", "Id", "id"], "")).trim();
+            if (!id) return;
+
+            const container = $("cards");
+
+            const enFirst = pick(student, ["EnglishFirstname", "englishFirstname", "EnglishFirstName", "English_Firstname"], "");
+            const enLast = pick(student, ["EnglishLastname", "englishLastname", "EnglishLastName", "English_Lastname"], "");
+            const enName = `${enFirst} ${enLast}`.trim() || "-";
+
+            const thFirst = pick(student, ["ThaiFirstname", "thaiFirstname", "ThaiFirstName"], "-");
+            const thLast = pick(student, ["ThaiLastname", "thaiLastname", "ThaiLastName"], "-");
+
+            const age = pick(student, ["Age", "age"], "-");
+            const birth = formatBirth(pick(student, ["Birth", "birth", "Birthday", "DOB"], "-"));
+            const country = pick(student, ["Country", "country"], "");
+
+            const imgRaw = pick(student, ["Image", "image", "Photo", "photo"], "");
+            const img = normalizeImageSrc(imgRaw);
+
+            const iso2 = countryToISO2(country);
+            const flagUrl = flagUrlFromISO2(iso2);
+
+            const commentDefault = pick(student, ["Comment", "comment"], "");
+            const status = pick(student, ["Status", "status"], "");
+            const isDone = (status === "Approve" || status === "Disapprove");
+
+            const el = document.createElement("div");
+            el.className = "card";
+            el.id = "card-" + id;
+
+            let statusText = "สถานะ : รอสัมภาษณ์";
+            let stripStyle = "";
+            if (status === "Approve") {
+                statusText = "สถานะ : ผ่าน";
+                stripStyle = "background-color:#10B981;color:#fff;";
+            } else if (status === "Disapprove") {
+                statusText = "สถานะ : ไม่ผ่าน";
+                stripStyle = "background-color:#EF4444;color:#fff;";
+            }
+
+            const userIconHtml = `<div class="userIcon" aria-label="User"></div>`;
+            const avatarHtml = img
+                ? `<div class="avatar"><img loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(img)}" alt="img"
+                    onerror="this.parentElement.outerHTML='${userIconHtml.replace(/"/g, "&quot;")}'"></div>`
+                : userIconHtml;
+
+            el.innerHTML = `
+    <div class="xTop" title="remove">&times;</div>
+    <div class="cardHeader">
+      ${avatarHtml}
+      <div class="headerName">${escapeHtml(enName)}</div>
+      <div class="headerFlag">
+        ${flagUrl ? `<img class="flagImg" src="${flagUrl}" alt="${escapeHtml(iso2)}" onerror="this.style.display='none'">` : ""}
+        ${iso2 ? `<span>${escapeHtml(iso2)}</span>` : `<span>🌐</span>`}
+      </div>
+    </div>
+
+    <div class="statusStrip" style="${stripStyle}">${statusText}</div>
+
+    <div class="cardBody">
+      <div class="dataRow"><span class="dataLabel">ID:</span><span class="dataValue">${escapeHtml(id)}</span></div>
+      <div class="dataRow"><span class="dataLabel">FirstName:</span><span class="dataValue">${escapeHtml(thFirst)}</span></div>
+      <div class="dataRow"><span class="dataLabel">LastName:</span><span class="dataValue">${escapeHtml(thLast)}</span></div>
+      <div class="dataRow"><span class="dataLabel">Age:</span><span class="dataValue">${escapeHtml(age)}</span></div>
+      <div class="dataRow"><span class="dataLabel">Birth:</span><span class="dataValue">${escapeHtml(birth)}</span></div>
+
+      <div class="divider"></div>
+
+      <textarea data-role="comment" placeholder="Add your comments here ..." ${isDone ? "disabled" : ""}>${escapeHtml(commentDefault)}</textarea>
+
+      <div class="actions ${isDone ? 'd-none' : ''}" data-role="actions-vote">
+        <div class="actionGroup" data-role="approve">
+          <button class="circleBtn okBtn" type="button">
+            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+          </button>
+          <span class="btnLabel">Approve</span>
+        </div>
+
+        <div class="actionGroup" data-role="disapprove">
+          <button class="circleBtn badBtn" type="button">
+            <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+          <span class="btnLabel">Disapprove</span>
+        </div>
+      </div>
+
+       <div class="actions ${isDone ? '' : 'd-none'}" data-role="actions-edit">
+            <div class="actionGroup" data-role="edit">
+              <button class="circleBtn editBtn" type="button">
+                 <svg fill="white" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+              </button>
+              <span class="btnLabel">แก้ไขคะแนน</span>
+            </div>
+      </div>
+    </div>
+  `;
+
+            el.querySelector(".xTop").addEventListener("click", () => removeFromRound(id));
+            el.querySelector('.actionGroup[data-role="approve"]').addEventListener("click", () => submitScore(id, "Approve"));
+            el.querySelector('.actionGroup[data-role="disapprove"]').addEventListener("click", () => submitScore(id, "Disapprove"));
+            el.querySelector('.actionGroup[data-role="edit"]').addEventListener("click", () => enableEditMode(id));
+
+            container.appendChild(el);
+        }
+
+        /* =========================
+           กดคะแนน -> เข้าคิว + ลบการ์ด
+           ========================= */
+
+        function submitScore(id, status) {
+            const card = $("card-" + id);
+            if (!card) return;
+
+            const comment = card.querySelector('[data-role="comment"]').value.trim();
+            const item = roundCards.get(id);
+            if (item && item.student) {
+                item.student.Status = status;
+                item.student.Comment = comment;
+            }
+
+            upsertPending({ id, status, comment, ts: Date.now() });
+            toast(`บันทึกแล้ว: ${status}`);
+
+            removeFromRound(id);
+            flushQueue(false);
+        }
+
+        function updateCardDisplay(id, status) {
+            const card = $("card-" + id);
+            if (!card) return;
+
+            const strip = card.querySelector(".statusStrip");
+            let text = "สถานะ : ...";
+            let style = "";
+            if (status === "Approve") {
+                text = "สถานะ : ผ่าน";
+                style = "background-color:#10B981;color:#fff;";
+            } else if (status === "Disapprove") {
+                text = "สถานะ : ไม่ผ่าน";
+                style = "background-color:#EF4444;color:#fff;";
+            }
+            if (strip) {
+                strip.textContent = text;
+                strip.style = style;
+            }
+
+            const comment = card.querySelector('[data-role="comment"]');
+            if (comment) comment.disabled = true;
+
+            const actionsVote = card.querySelector('[data-role="actions-vote"]');
+            const actionsEdit = card.querySelector('[data-role="actions-edit"]');
+            if (actionsVote) actionsVote.classList.add("d-none");
+            if (actionsEdit) actionsEdit.classList.remove("d-none");
+        }
+
+        function enableEditMode(id) {
+            const card = $("card-" + id);
+            if (!card) return;
+
+            const comment = card.querySelector('[data-role="comment"]');
+            if (comment) {
+                comment.disabled = false;
+                comment.focus();
+            }
+
+            const actionsVote = card.querySelector('[data-role="actions-vote"]');
+            const actionsEdit = card.querySelector('[data-role="actions-edit"]');
+            if (actionsVote) actionsVote.classList.remove("d-none");
+            if (actionsEdit) actionsEdit.classList.add("d-none");
+        }
+
+        function removeFromRound(id) {
+            const el = $("card-" + id);
+            if (el) el.remove();
+            roundCards.delete(id);
+            updateCounters();
+        }
+
+        function debugLog(tag, payload) {
+            console.log(`[${tag}]`, payload || "");
+        }
+
+        function handleServerFlushInfo(data, sourceTag = "server") {
+            if (!data) return;
+
+            const flushed = Number(data.flushed || 0);
+            const skipped = Number(data.skipped || 0);
+            const remaining = Number(data.remaining || 0);
+            const skippedIds = Array.isArray(data.skippedIds) ? data.skippedIds : [];
+
+            if (flushed > 0 || skipped > 0) {
+                debugLog(`${sourceTag}:flush_result`, { flushed, skipped, remaining, skippedIds });
+
+                if (skipped > 0) {
+                    toast(`ส่งแล้ว ${flushed} • ข้าม ${skipped} (ID ไม่เจอในชีต)`);
+                    console.warn("Skipped IDs:", skippedIds);
+                    statusText(`มี ${skipped} รายการไม่เข้า (ดู console/LOG ชีต)`);
+                } else {
+                    toast(`ส่งแล้ว ${flushed} รายการ`);
+                    statusText("พร้อม");
+                }
+            }
+        }
+
+        /* =========================
+           Search / Add to Round
+           ========================= */
+        async function addIdsToRound(raw) {
+            const ids = parseIds(raw);
+            if (ids.length === 0) return setMsg("msg2", "warn", "กรอก ID ก่อน");
+            if (roundCards.size >= MAX_PER_ROUND) {
+                showAlert("ขีดจำกัดสูงสุด", `การค้นหาถึงขีดจำกัด ${MAX_PER_ROUND} ไอดีแล้ว<br>กรุณากดรีเซ็ตรอบก่อนค้นหาเพิ่ม`);
+                return setMsg("msg2", "warn", `รอบนี้เต็มแล้ว (${MAX_PER_ROUND} คน)`);
+            }
+
+            setMsg("msg2", "", "กำลังค้นหา...");
+            let added = 0, notFound = 0, skipped = 0;
+            let missingIds = [];
+
+            for (const id of ids) {
+                if (roundCards.size >= MAX_PER_ROUND) { skipped++; continue; }
+                if (roundCards.has(id)) {
+                    const existing = roundCards.get(id);
+                    // ถ้ามีอยู่แล้วให้ scroll ไปหา
+                    const exEl = $("card-" + id);
+                    if (exEl) exEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                    toast(`⚠️ ID ${id} มีอยู่แล้ว`);
+                    continue;
+                }
+
+                try {
+                    const s = await apiSearchById(id);
+                    if (!s) {
+                        notFound++;
+                        missingIds.push(id);
+                        continue;
+                    }
+                    roundCards.set(String(s.ID ?? id), { student: s });
+                    renderCard(s);
+                    added++;
+                } catch (e) {
+                    notFound++;
+                    missingIds.push(id);
+                }
+            }
+
+            if (missingIds.length > 0) {
+                showAlert("ไม่พบรหัสนักเรียน", `ไม่พบข้อมุูลสำหรับ ID: <b>${missingIds.join(", ")}</b><br>โปรดตรวจสอบความถูกต้อง`);
+            }
+
+            updateCounters();
+            const parts = [];
+            if (added) parts.push(`เพิ่ม ${added} คน`);
+            if (notFound) parts.push(`ไม่พบ ${notFound}`);
+            if (skipped) parts.push(`ข้าม ${skipped}`);
+            setMsg("msg2", (notFound || skipped) ? "warn" : "ok", parts.join(" • ") || "เสร็จแล้ว");
+        }
+
+        function resetRound() {
+            $("cards").innerHTML = "";
+            roundCards.clear();
+            updateCounters();
+            setMsg("msg2", "", "รีเซ็ตรอบแล้ว");
+        }
+
+        /* =========================
+           Flush Queue (ส่งขึ้นชีต)
+           ========================= */
+        async function flushQueue(force) {
+            if (flushing) return;
+            if (pendingQueue.length === 0) return;
+
+            if (!force && pendingQueue.length < FLUSH_AT) return;
+            if (!canFlushNow() && !force) return;
+
+            flushing = true;
+            statusText();
+
+            const take = force ? Math.min(pendingQueue.length, 20) : Math.min(pendingQueue.length, FLUSH_AT);
+            const batch = pendingQueue.splice(0, take);
+            persistQueue();
+
+            let okCount = 0;
+
+            try {
+                for (let idx = 0; idx < batch.length; idx++) {
+                    const it = batch[idx];
+
+                    try {
+                        const res = await apiUpdateOneById(it.id, it.status, it.comment);
+                        okCount++;
+                        handleServerFlushInfo(res, "update");
+                        adaptiveDelayMs = Math.max(RATE.minDelayMs, adaptiveDelayMs * RATE.successSpeedup);
+
+                    } catch (err) {
+                        const code = err?.code || 0;
+                        const retryable = isRetryableStatus(code) || isNetworkError(err);
+                        adaptiveDelayMs = Math.min(RATE.maxDelayMs, adaptiveDelayMs * RATE.failBackoff);
+
+                        pendingQueue = [it, ...batch.slice(idx + 1), ...pendingQueue];
+                        persistQueue();
+
+                        debugLog("flushQueue:error", { id: it.id, code, retryable, err: err?.message });
+
+                        if (retryable) {
+                            toast("เน็ต/ลิมิตมีปัญหา → คืนคิวแล้ว (จะส่งใหม่อัตโนมัติ)");
+                            statusText(`รอส่งใหม่ (backoff ~${Math.round(adaptiveDelayMs)}ms)`);
+                            flushing = false;
+                            await sleep(Math.min(RATE.maxDelayMs, adaptiveDelayMs) + randInt(RATE.jitterMs));
+                            return;
+                        } else {
+                            toast(`ส่งไม่สำเร็จถาวร ID=${it.id} (คืนคิวแล้ว)`);
+                            statusText("พัง/ตรวจข้อมูล (ดู console/LOG)");
+                            flushing = false;
+                            return;
+                        }
+                    }
+
+                    await sleep(Math.min(RATE.maxDelayMs, adaptiveDelayMs) + randInt(RATE.jitterMs));
+                    statusText();
+                }
+
+                toast(`ส่งสำเร็จ ${okCount}/${batch.length} รายการ`);
+                flushing = false;
+                statusText("พร้อม");
+
+                if (force && pendingQueue.length > 0) {
+                    setTimeout(() => flushQueue(true), 400 + randInt(600));
+                }
+            } catch (e2) {
+                pendingQueue = batch.concat(pendingQueue);
+                persistQueue();
+                statusText("พัง/รอส่งใหม่");
+                flushing = false;
+                toast("ส่งไม่สำเร็จ (คืนรายการกลับคิวแล้ว)");
+                debugLog("flushQueue:fatal", e2?.message || e2);
+            }
+        }
+
+        /* =========================
+           Wire events
+           ========================= */
+        $("btnPreload").addEventListener("click", async () => {
+            setMsg("msg1", "", "กำลังโหลดข้อมูลทั้งหมด...");
+            try {
+                await preloadDbIfNeeded(true);
+                setMsg("msg1", "ok", "โหลดข้อมูลสำเร็จ พร้อมใช้งานทั้งวัน");
+            } catch (e) {
+                setMsg("msg1", "warn", "โหลดข้อมูลไม่สำเร็จ: " + (e?.message || "ลองใหม่"));
+            }
+        });
+
+        $("btnGo").addEventListener("click", async () => {
+            const raw = $("idInput1").value.trim();
+            if (!raw) return setMsg("msg1", "warn", "กรอก Student ID ก่อน");
+
+            setMsg("msg1", "", "กำลังเตรียมข้อมูล (preload) ...");
+            try {
+                await preloadDbIfNeeded(false);
+                setMsg("msg1", "ok", "พร้อมแล้ว");
+            } catch (e) {
+                setMsg("msg1", "warn", "preload ไม่สำเร็จ จะใช้โหมดค้นหาทีละคนแทน");
+            }
+
+            showPage2();
+            addIdsToRound(raw);
+        });
+
+        $("idInput1").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnGo").click(); });
+        $("btnAdd").addEventListener("click", () => addIdsToRound($("idInput2").value.trim()));
+        $("idInput2").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnAdd").click(); });
+
+        $("btnResetRound").addEventListener("click", resetRound);
+        $("btnForceFlush").addEventListener("click", async () => {
+            try {
+                statusText("กำลังส่งคิวในเครื่อง...");
+                await flushQueue(true);
+
+                statusText("กำลังสั่งหลังบ้าน flush...");
+                const res = await apiForceFlush(true);
+                handleServerFlushInfo(res, "manual_flush");
+
+                statusText("พร้อม");
+            } catch (e) {
+                toast("สั่ง flush ไม่สำเร็จ: " + (e?.message || "ลองใหม่"));
+                debugLog("btnForceFlush:error", e?.message || e);
+                statusText("พัง/ลองใหม่");
+            }
+        });
+
+        /* =========================
+           Auto flush (slot + stale)
+           ========================= */
+        const OFFSET_KEY = "AUTOFLUSH_OFFSET_MS_V1";
+        let offset = safeJson(localStorage.getItem(OFFSET_KEY));
+        if (typeof offset !== "number") {
+            offset = randInt(5000);
+            localStorage.setItem(OFFSET_KEY, JSON.stringify(offset));
+        }
+
+        setTimeout(function loop() {
+            if (pendingQueue.length >= FLUSH_AT && canFlushNow()) {
+                flushQueue(false);
+            }
+            if (shouldFlushStale() && canFlushNow()) {
+                flushQueue(true);
+            }
+
+            const next = 4000 + randInt(3000);
+            setTimeout(loop, next);
+        }, offset);
+
+        /* init */
+        updateCounters();
+        statusText("พร้อม");
+    </script>
+</body>
+
+</html>
