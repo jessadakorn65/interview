@@ -3,21 +3,166 @@
  *  ========================= */
 const SPREADSHEET_ID = "1ozLZm32sh2VNe0N2PTgFFDLcdZ4kEW7UDhaGCFnLgEc";
 const SHEET_NAME = "raw";
-const IMPORT_SHEET_NAME = "raw_import";
 
-// raw headers (ในชีต raw)
-const RAW_ID_COL = "ID";
-const RAW_STUDENT_ID_COL = "StudentID";
-const RAW_PIC_COL = "pic";
+// หน่วงเวลาเขียนกันชน (ms) — ปรับได้ เช่น 200-800
+const WRITE_DELAY_MS = 500;
+const LAST_WRITE_TS_KEY = "LAST_WRITE_TS_V1";
 
-// queue
-const QUEUE_KEY = "ASSESS_QUEUE_V1";
-const AUTO_FLUSH_AT = 10;
-const MAX_FLUSH_ITEMS = 50;
-
-// LOG
+// LOG (ปิดได้)
 const LOG_SHEET_NAME = "LOG";
 const ENABLE_SHEET_LOG = true;
+
+/** =========================
+ *  RAW headers (ตามชีตของคุณ)
+ *  ========================= */
+const COL_ID = "ID";
+const COL_FINAL = "/Final";
+const COL_TITLE = "/TitleName";
+const COL_THAI_NAME = "/Name(Thai)";
+const COL_THAI_SURNAME = "/surname(Thai)";
+const COL_ENG_NAME = "/Name(English)";
+const COL_ENG_SURNAME = "/surname(English)";
+const COL_PIC = "/pic";
+const COL_BIRTH_RAW = "/birth";
+const COL_BIRTH_DMY = "/birth(DD/MM/YYYY)";
+const COL_STATUS = "/Status/";
+const COL_COMMENT = "/Comment/";
+const COL_TS_DEPA = "/TimestampDepa/";
+const COL_UNIVERSITY = "University";
+
+/** =========================
+ *  ✅ Header normalize / alias helpers
+ * ========================= */
+function normHeader_(s) {
+  return String(s ?? "")
+    .trim()
+    .replace(/\s+/g, "")          // remove spaces
+    .replace(/^\/+|\/+$/g, "")    // strip leading/trailing /
+    .toLowerCase();
+}
+
+function buildColIndex_(header) {
+  const idx = {};
+  header.forEach((h, i) => {
+    const k = normHeader_(h);
+    if (k && idx[k] == null) idx[k] = i;
+  });
+  return idx;
+}
+
+function getIdxByAliases_(colIndexNorm, aliases) {
+  for (const a of aliases) {
+    const k = normHeader_(a);
+    if (colIndexNorm[k] != null) return colIndexNorm[k];
+  }
+  return null;
+}
+
+/** =========================
+ *  WEB APP ENTRY
+ * ========================= */
+function doGet(e) {
+  const action = String(e?.parameter?.action || "").toLowerCase();
+  if (!action) return jsonOut_({ ok: true, msg: "API running. Use ?action=export|search|update|status" });
+
+  try {
+    if (action === "export") {
+      const limit = Number(e.parameter.limit || "0") || 0;
+      const rows = exportAll_(limit);
+      return jsonOut_({ ok: true, rows });
+    }
+
+    if (action === "search") {
+      const id = String(e.parameter.id || "").trim();
+      if (!id) return jsonOut_({ ok: false, error: "missing id" });
+      const data = searchByIdOrFinal_(id);
+      return jsonOut_({ ok: true, data: data || null });
+    }
+
+    if (action === "update") {
+      const id = String(e.parameter.id || "").trim();
+      const status = String(e.parameter.status || "").trim();
+      const comment = String(e.parameter.comment || "");
+
+      if (!id || !status) return jsonOut_({ ok: false, error: "missing id/status" });
+
+      const res = updateStatusByIdOrFinal_(id, status, comment);
+      if (!res.updated) {
+        log_("WARN", "update failed", res);
+        return jsonOut_({ ok: false, ...res });
+      }
+      return jsonOut_({ ok: true, ...res });
+    }
+
+    if (action === "status") {
+      return jsonOut_({ ok: true, writeDelayMs: WRITE_DELAY_MS });
+    }
+
+    return jsonOut_({ ok: false, error: "unknown action: " + action });
+  } catch (err) {
+    log_("ERROR", "doGet exception", { error: err.message, action });
+    return jsonOut_({ ok: false, error: "Exception: " + err.message });
+  }
+}
+
+/** =========================
+ *  Sheet helpers
+ *  ========================= */
+function getSheet_() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName(SHEET_NAME);
+  if (!sh) throw new Error("Sheet tab not found: " + SHEET_NAME);
+  return sh;
+}
+
+function readHeader_(sh) {
+  const lastCol = sh.getLastColumn();
+  const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(x => String(x).trim());
+  const colIndexNorm = buildColIndex_(header);
+  return { header, colIndexNorm, lastCol };
+}
+
+function ensureCols_(sh, colIndexNorm, lastCol) {
+  // เพิ่มคอลัมน์เฉพาะกรณี "ไม่มีจริง ๆ" (ทั้งแบบมี/ไม่มี /)
+  const need = [
+    { name: COL_STATUS, aliases: [COL_STATUS, "Status"] },
+    { name: COL_COMMENT, aliases: [COL_COMMENT, "Comment"] },
+    { name: COL_TS_DEPA, aliases: [COL_TS_DEPA, "TimestampDepa", "Timestamp"] },
+    { name: COL_UNIVERSITY, aliases: [COL_UNIVERSITY, "University"] },
+  ];
+
+  let added = 0;
+  for (const it of need) {
+    const found = getIdxByAliases_(colIndexNorm, it.aliases);
+    if (found == null) {
+      sh.getRange(1, lastCol + 1 + added).setValue(it.name);
+      colIndexNorm[normHeader_(it.name)] = lastCol + added;
+      added++;
+    }
+  }
+  return sh.getLastColumn();
+}
+
+/** =========================
+ *  Throttle + Lock
+ *  ========================= */
+function lockAndThrottle_() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const last = Number(props.getProperty(LAST_WRITE_TS_KEY) || "0");
+    const now = Date.now();
+    const wait = (last + WRITE_DELAY_MS) - now;
+    if (wait > 0) Utilities.sleep(wait);
+
+    props.setProperty(LAST_WRITE_TS_KEY, String(Date.now()));
+    return lock;
+  } catch (e) {
+    lock.releaseLock();
+    throw e;
+  }
+}
 
 /** =========================
  *  Image Normalizer
@@ -27,7 +172,7 @@ function normalizeImage_(v) {
 
   if (Array.isArray(v)) v = v[0];
   if (typeof v === "object") {
-    for (const k of ["url","link","src","fileUrl","downloadUrl","id","fileId"]) {
+    for (const k of ["url","link","src","fileUrl","downloadUrl","id","fileId","imageUrl"]) {
       if (v && v[k]) return normalizeImage_(v[k]);
     }
     return { imageUrl: "", fallbackUrl: "", fileId: "", raw: "" };
@@ -71,7 +216,6 @@ function extractDriveFileIdSafe_(urlOrId) {
   m = s.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
   if (m) return m[1];
 
-  // รองรับลิงก์แบบ open?id=xxxx
   m = s.match(/open\?id=([a-zA-Z0-9_-]{10,})/);
   if (m) return m[1];
 
@@ -79,307 +223,82 @@ function extractDriveFileIdSafe_(urlOrId) {
 }
 
 /** =========================
- *  RAW -> UI schema mapper (ให้ HTML เดิมใช้ได้)
+ *  Mapper: row -> profile object (alias-safe)
  *  ========================= */
-function mapRawToUi_(rawObj) {
-  const id = String(rawObj[RAW_ID_COL] ?? "").trim()
-        || String(rawObj[RAW_STUDENT_ID_COL] ?? "").trim();
-
-  const name = String(rawObj.Name ?? "").trim();
-  const surname = String(rawObj.Surname ?? "").trim();
-
-  // รูป
-  let image = "", imageFallback = "", imageFileId = "";
-  const picVal = rawObj[RAW_PIC_COL];
-  if (picVal != null && String(picVal).trim() !== "") {
-    const img = normalizeImage_(picVal);
-    image = img.imageUrl || "";
-    imageFallback = img.fallbackUrl || "";
-    imageFileId = img.fileId || "";
+function mapProfileFromRow_(header, row) {
+  const m = {};
+  for (let i = 0; i < header.length; i++) {
+    m[normHeader_(header[i])] = row[i];
   }
 
+  const getV_ = (aliases) => {
+    for (const a of aliases) {
+      const v = m[normHeader_(a)];
+      if (v !== undefined) return v;
+    }
+    return "";
+  };
+
+  const picVal = getV_([COL_PIC, "pic"]);
+  const img = (picVal != null && String(picVal).trim() !== "") ? normalizeImage_(picVal) : null;
+
   return {
-    // ให้ HTML ตัวเดิมใช้ได้
-    ID: id,
-    StudentID: rawObj.StudentID ?? "",
-    ThaiFirstname: name || "-",
-    ThaiLastname: surname || "-",
+    ID: String(getV_([COL_ID, "ID"]) ?? "").trim(),
+    Final: getV_([COL_FINAL, "Final"]),
+    TitleName: getV_([COL_TITLE, "TitleName"]),
 
-    // ✅ ดึงจากคอลัมน์ใหม่จริง
-    EnglishFirstname: rawObj.EnglishFirstname ?? "",
-    EnglishLastname: rawObj.EnglishLastname ?? "",
-    Birth: rawObj.Birth ?? "",                 // เช่น 28/06/2551 หรือ 5ตุลาคม2547
-    University: rawObj.University ?? "",       // ODOS2USA01 - ...
-    phone_number: rawObj.phone_number ?? "",
+    ThaiFirstname: getV_([COL_THAI_NAME, "Name(Thai)", "NameThai"]),
+    ThaiLastname: getV_([COL_THAI_SURNAME, "surname(Thai)", "Surname(Thai)", "SurnameThai"]),
 
-    // รูป
-    Image: image,
-    ImageFallback: imageFallback,
-    ImageFileId: imageFileId,
+    EnglishFirstname: getV_([COL_ENG_NAME, "Name(English)", "NameEnglish", "EnglishFirstname"]),
+    EnglishLastname: getV_([COL_ENG_SURNAME, "surname(English)", "Surname(English)", "SurnameEnglish", "EnglishLastname"]),
 
-    // คะแนน/คอมเมนต์
-    Status: rawObj.Status ?? "",
-    Comment: rawObj.Comment ?? "",
-    TimestampDepa: rawObj.TimestampDepa ?? ""
+    Birth: getV_([COL_BIRTH_RAW, "birth", "Birth"]),
+    Birth_DDMMYYYY: getV_([COL_BIRTH_DMY, "birth(DD/MM/YYYY)", "Birth(DD/MM/YYYY)"]),
+
+    Image: img ? (img.imageUrl || "") : "",
+    ImageFallback: img ? (img.fallbackUrl || "") : "",
+    ImageFileId: img ? (img.fileId || "") : "",
+
+    Status: getV_([COL_STATUS, "Status"]),
+    Comment: getV_([COL_COMMENT, "Comment"]),
+    TimestampDepa: getV_([COL_TS_DEPA, "TimestampDepa"]),
+    University: getV_([COL_UNIVERSITY, "University"])
   };
 }
 
-
 /** =========================
- *  WEB APP ENTRY (API)
+ *  API functions
  *  ========================= */
-function doGet(e) {
-  const action = String(e?.parameter?.action || "").toLowerCase();
-
-  if (!action) return jsonOut_({ ok: true, msg: "API running. Use ?action=export|search|update|flush|sync" });
-
-  try {
-    if (action === "sync") {
-      const r = SYNC_NOW();
-      return jsonOut_({ ok: true, ...r });
-    }
-
-    if (action === "export") {
-      SYNC_NOW(); // ✅ ให้แน่ใจว่า raw มีข้อมูลล่าสุด
-      const rows = exportAllRows_();
-      return jsonOut_({ ok: true, rows });
-    }
-
-    if (action === "search") {
-      SYNC_NOW();
-      const id = String(e.parameter.id || "").trim();
-      if (!id) return jsonOut_({ ok: false, error: "missing id" });
-      const student = findStudentById_(id);
-      return jsonOut_({ ok: true, data: student || null });
-    }
-
-    if (action === "update") {
-      const id = String(e.parameter.id || "").trim();
-      const status = String(e.parameter.status || "").trim();
-      const comment = String(e.parameter.comment || "").trim();
-      if (!id || !status) return jsonOut_({ ok: false, error: "missing id/status" });
-
-      const res = enqueue_({ id, status, comment, ts: Date.now() });
-
-      if (res.queueSize >= AUTO_FLUSH_AT) {
-        const f = flush_(false);
-        return jsonOut_({
-          ok: true,
-          queued: true,
-          queueSize: res.queueSize,
-          flushed: f.flushed,
-          skipped: f.skipped,
-          remaining: f.remaining,
-          skippedIds: f.skippedIds || []
-        });
-      }
-      return jsonOut_({ ok: true, queued: true, queueSize: res.queueSize });
-    }
-
-    if (action === "flush") {
-      const force = String(e.parameter.force || "") === "1" || String(e.parameter.force || "").toLowerCase() === "true";
-      const f = flush_(force);
-      return jsonOut_({
-        ok: true,
-        flushed: f.flushed,
-        skipped: f.skipped,
-        remaining: f.remaining,
-        skippedIds: f.skippedIds || []
-      });
-    }
-
-    if (action === "status") {
-      const q = readQueue_();
-      return jsonOut_({ ok: true, queueSize: Object.keys(q).length });
-    }
-
-    return jsonOut_({ ok: false, error: "unknown action: " + action });
-  } catch (err) {
-    log_("ERROR", "doGet exception", { error: err.message, action });
-    return jsonOut_({ ok: false, error: "Exception: " + err.message });
-  }
-}
-
-/** =========================
- *  QUEUE
- *  ========================= */
-function enqueue_(item) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const q = readQueue_();
-    const id = String(item.id).trim();
-    q[id] = { id, status: String(item.status || ""), comment: String(item.comment || ""), ts: Number(item.ts || Date.now()) };
-    writeQueue_(q);
-    return { queueSize: Object.keys(q).length };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function flush_(force) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(25000);
-  try {
-    const q = readQueue_();
-    const keys = Object.keys(q);
-
-    if (keys.length === 0) return { flushed: 0, skipped: 0, remaining: 0, skippedIds: [] };
-    if (!force && keys.length < AUTO_FLUSH_AT) return { flushed: 0, skipped: 0, remaining: keys.length, skippedIds: [] };
-
-    keys.sort((a, b) => (q[a].ts || 0) - (q[b].ts || 0));
-    const takeKeys = keys.slice(0, Math.min(keys.length, MAX_FLUSH_ITEMS));
-    const items = takeKeys.map(k => q[k]);
-
-    const result = writeBatchToSheet_(items);
-    const updatedSet = new Set(result.updatedIds);
-
-    for (const k of takeKeys) if (updatedSet.has(String(k))) delete q[k];
-    writeQueue_(q);
-
-    if (result.skippedIds.length > 0) {
-      log_("WARN", "flush skipped ids (not found in sheet)", { take: takeKeys.length, flushed: result.updatedIds.length, skipped: result.skippedIds.length, skippedIds: result.skippedIds.slice(0, 50) });
-    } else {
-      log_("INFO", "flush ok", { take: takeKeys.length, flushed: result.updatedIds.length });
-    }
-
-    return { flushed: result.updatedIds.length, skipped: result.skippedIds.length, remaining: Object.keys(q).length, skippedIds: result.skippedIds };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/** =========================
- *  SHEET helpers
- *  ========================= */
-function getSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(SHEET_NAME);
-  if (!sh) throw new Error("Sheet tab not found: " + SHEET_NAME);
-  return sh;
-}
-
-function getImportSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sh = ss.getSheetByName(IMPORT_SHEET_NAME);
-  if (!sh) throw new Error("Sheet tab not found: " + IMPORT_SHEET_NAME);
-  return sh;
-}
-
-function readHeader_(sh) {
-  const lastCol = sh.getLastColumn();
-  const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(x => String(x).trim());
-  const colIndex = {};
-  header.forEach((name, i) => colIndex[name] = i);
-  return { header, colIndex, lastCol };
-}
-
-function ensureCols_(sh, colIndex, lastCol) {
-  const needCols = [
-    "Status", "Comment", "TimestampDepa",
-    "EnglishFirstname", "EnglishLastname", "Birth", "University", "phone_number"
-  ];
-  let added = 0;
-  for (const c of needCols) {
-    if (colIndex[c] == null) {
-      sh.getRange(1, lastCol + 1 + added).setValue(c);
-      colIndex[c] = lastCol + added;
-      added++;
-    }
-  }
-  return sh.getLastColumn();
-}
-
-
-/** update จะหา row ด้วย ID ก่อน ถ้าไม่เจอค่อยใช้ StudentID */
-function writeBatchToSheet_(items) {
-  const sh = getSheet_();
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) throw new Error("Sheet has no data rows.");
-
-  const { colIndex, lastCol } = readHeader_(sh);
-
-  if (colIndex[RAW_STUDENT_ID_COL] == null) throw new Error("Missing column header: " + RAW_STUDENT_ID_COL);
-  if (colIndex[RAW_ID_COL] == null) throw new Error("Missing column header: " + RAW_ID_COL);
-
-  const newLastCol = ensureCols_(sh, colIndex, lastCol);
-
-  const dataRange = sh.getRange(2, 1, lastRow - 1, newLastCol);
-  const values = dataRange.getValues();
-
-  const idCol = colIndex[RAW_ID_COL];
-  const studentIdCol = colIndex[RAW_STUDENT_ID_COL];
-  const statusCol = colIndex["Status"];
-  const commentCol = colIndex["Comment"];
-  const tsCol = colIndex["TimestampDepa"];
-  const now = new Date();
-
-  const rowById = new Map();
-  const rowByStudentId = new Map();
-
-  for (let r = 0; r < values.length; r++) {
-    const id = String(values[r][idCol]).trim();
-    const sid = String(values[r][studentIdCol]).trim();
-    if (id) rowById.set(id, r);
-    if (sid) rowByStudentId.set(sid, r);
-  }
-
-  const updatedIds = [];
-  const skippedIds = [];
-
-  for (const it of items) {
-    const key = String(it.id || "").trim();
-    if (!key) { skippedIds.push(key); continue; }
-
-    const ridx = (rowById.has(key)) ? rowById.get(key) : rowByStudentId.get(key);
-    if (ridx == null) { skippedIds.push(key); continue; }
-
-    values[ridx][statusCol] = String(it.status || "");
-    values[ridx][commentCol] = String(it.comment || "");
-    values[ridx][tsCol] = now;
-    updatedIds.push(key);
-  }
-
-  dataRange.setValues(values);
-  return { updatedIds, skippedIds };
-}
-
-/** search จะหา row ด้วย ID ก่อน ถ้าไม่เจอค่อยใช้ StudentID */
-function findStudentById_(id) {
+function searchByIdOrFinal_(key) {
   const sh = getSheet_();
   const lastRow = sh.getLastRow();
   if (lastRow < 2) return null;
 
-  const { header, colIndex, lastCol } = readHeader_(sh);
+  let { header, colIndexNorm, lastCol } = readHeader_(sh);
+  const newLastCol = ensureCols_(sh, colIndexNorm, lastCol);
+  if (newLastCol !== lastCol) ({ header, colIndexNorm } = readHeader_(sh));
 
-  if (colIndex[RAW_STUDENT_ID_COL] == null) throw new Error("Missing column header: " + RAW_STUDENT_ID_COL);
-  if (colIndex[RAW_ID_COL] == null) throw new Error("Missing column header: " + RAW_ID_COL);
+  const allCol = sh.getLastColumn();
+  const values = sh.getRange(2, 1, lastRow - 1, allCol).getValues();
 
-  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const idIdx = getIdxByAliases_(colIndexNorm, [COL_ID, "ID"]);
+  const finalIdx = getIdxByAliases_(colIndexNorm, [COL_FINAL, "Final"]);
+  if (idIdx == null && finalIdx == null) throw new Error("Missing ID/Final columns");
 
-  const idIdx = colIndex[RAW_ID_COL];
-  const sidIdx = colIndex[RAW_STUDENT_ID_COL];
+  const k = String(key || "").trim();
+  let ridx = -1;
 
-  const key = String(id).trim();
-  let foundRowValues = null;
-
-  for (let i = 0; i < values.length; i++) {
-    if (String(values[i][idIdx]).trim() === key) { foundRowValues = values[i]; break; }
+  for (let r = 0; r < values.length; r++) {
+    if (idIdx != null && String(values[r][idIdx] ?? "").trim() === k) { ridx = r; break; }
+    if (finalIdx != null && String(values[r][finalIdx] ?? "").trim() === k) { ridx = r; break; }
   }
-  if (!foundRowValues) {
-    for (let i = 0; i < values.length; i++) {
-      if (String(values[i][sidIdx]).trim() === key) { foundRowValues = values[i]; break; }
-    }
-  }
+  if (ridx < 0) return null;
 
-  if (!foundRowValues) return null;
-
-  const rawObj = {};
-  for (let i = 0; i < header.length; i++) rawObj[header[i]] = foundRowValues[i];
-  return mapRawToUi_(rawObj);
+  return mapProfileFromRow_(header, values[ridx]);
 }
 
-function exportAllRows_() {
+function exportAll_(limit) {
   const sh = getSheet_();
   const lastRow = sh.getLastRow();
   const lastCol = sh.getLastColumn();
@@ -388,30 +307,65 @@ function exportAllRows_() {
   const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(x => String(x).trim());
   const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
-  return values.map(row => {
-    const rawObj = {};
-    for (let i = 0; i < header.length; i++) rawObj[header[i]] = row[i];
-    return mapRawToUi_(rawObj);
-  });
+  const out = [];
+  const n = Math.min(values.length, (limit && limit > 0) ? limit : values.length);
+  for (let r = 0; r < n; r++) out.push(mapProfileFromRow_(header, values[r]));
+  return out;
+}
+
+function updateStatusByIdOrFinal_(key, status, comment) {
+  const lock = lockAndThrottle_();
+  try {
+    const sh = getSheet_();
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) return { updated: false, error: "no data rows" };
+
+    let { header, colIndexNorm, lastCol } = readHeader_(sh);
+    ensureCols_(sh, colIndexNorm, lastCol);
+    ({ header, colIndexNorm } = readHeader_(sh));
+
+    const allCol = sh.getLastColumn();
+    const values = sh.getRange(2, 1, lastRow - 1, allCol).getValues();
+
+    const idIdx = getIdxByAliases_(colIndexNorm, [COL_ID, "ID"]);
+    const finalIdx = getIdxByAliases_(colIndexNorm, [COL_FINAL, "Final"]);
+
+    const statusIdx = getIdxByAliases_(colIndexNorm, [COL_STATUS, "Status"]);
+    const commentIdx = getIdxByAliases_(colIndexNorm, [COL_COMMENT, "Comment"]);
+    const tsIdx = getIdxByAliases_(colIndexNorm, [COL_TS_DEPA, "TimestampDepa"]);
+
+    const k = String(key || "").trim();
+    let ridx = -1;
+
+    for (let r = 0; r < values.length; r++) {
+      if (idIdx != null && String(values[r][idIdx] ?? "").trim() === k) { ridx = r; break; }
+      if (finalIdx != null && String(values[r][finalIdx] ?? "").trim() === k) { ridx = r; break; }
+    }
+    if (ridx < 0) return { updated: false, error: "id/final not found", id: String(key) };
+
+    values[ridx][statusIdx] = String(status ?? "");
+    values[ridx][commentIdx] = String(comment ?? "");
+    values[ridx][tsIdx] = new Date();
+
+    sh.getRange(2, 1, values.length, allCol).setValues(values);
+
+    return { updated: true, id: String(key) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** =========================
- *  PROPERTIES
- *  ========================= */
-function readQueue_() {
-  const props = PropertiesService.getScriptProperties();
-  const raw = props.getProperty(QUEUE_KEY);
-  if (!raw) return {};
-  try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
-}
-
-function writeQueue_(obj) {
-  PropertiesService.getScriptProperties().setProperty(QUEUE_KEY, JSON.stringify(obj || {}));
+ *  OUTPUT
+ * ========================= */
+function jsonOut_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 /** =========================
  *  LOG
- *  ========================= */
+ * ========================= */
 function getLogSheet_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sh = ss.getSheetByName(LOG_SHEET_NAME);
@@ -430,102 +384,4 @@ function log_(level, message, payload) {
     try { getLogSheet_().appendRow([ts, level, message, p]); }
     catch (e) { Logger.log(`[ERROR] write log sheet failed: ${e.message}`); }
   }
-}
-
-/** =========================
- *  OUTPUT
- *  ========================= */
-function jsonOut_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-/** =========================
- *  SYNC raw_import -> raw
- *  raw_import headers: StudentID, Gender, Name, Surname, Sub_district, Province, pic, stage2, stage4
- *  raw headers: ID, StudentID, Name, Surname, pic, stage2, stage4, Status, Comment, TimestampDepa
- *  ========================= */
-function SYNC_NOW() {
-  const importSh = getImportSheet_();
-  const rawSh = getSheet_();
-
-  // ensure raw has needed columns
-  let { header: rawHeader, colIndex: rawColIndex, lastCol: rawLastCol } = readHeader_(rawSh);
-  ensureCols_(rawSh, rawColIndex, rawLastCol);
-
-  // refresh header after ensure
-  ({ header: rawHeader, colIndex: rawColIndex, lastCol: rawLastCol } = readHeader_(rawSh));
-
-  // validate required headers in raw
-  const requiredRaw = [
-  "ID","StudentID","Name","Surname","pic","stage2","stage4",
-  "Status","Comment",
-  "EnglishFirstname","EnglishLastname","Birth","University","phone_number",
-  "TimestampDepa"
-];
-  for (const h of requiredRaw) {
-    if (rawColIndex[h] == null) throw new Error("raw missing header: " + h);
-  }
-
-  const lr = importSh.getLastRow();
-  const lc = importSh.getLastColumn();
-  if (lr < 2) return { appended: 0, skipped: 0, reason: "raw_import has no data" };
-
-  const importHeader = importSh.getRange(1, 1, 1, lc).getValues()[0].map(x => String(x).trim());
-  const importIndex = {};
-  importHeader.forEach((h, i) => importIndex[h] = i);
-
-  // required in import
-  const requiredImport = ["StudentID","Name","Surname","pic","stage2","stage4"];
-  for (const h of requiredImport) {
-    if (importIndex[h] == null) throw new Error("raw_import missing header: " + h);
-  }
-
-  const data = importSh.getRange(2, 1, lr - 1, lc).getValues();
-
-  // existing IDs in raw
-  const rawLR = rawSh.getLastRow();
-  const existing = new Set();
-  if (rawLR >= 2) {
-    rawSh.getRange(2, rawColIndex["ID"] + 1, rawLR - 1, 1).getValues().forEach(r => {
-      const v = String(r[0] ?? "").trim();
-      if (v) existing.add(v);
-    });
-  }
-
-  const toAppend = [];
-  let skipped = 0;
-
-  for (const r of data) {
-    const sid = String(r[importIndex["StudentID"]] ?? "").trim();
-    if (!sid) { skipped++; continue; }
-
-    const id = sid; // ✅ ใช้ StudentID เป็น ID
-    if (existing.has(id)) { skipped++; continue; }
-
-    toAppend.push([
-  id,
-  sid,
-  String(r[importIndex["Name"]] ?? "").trim(),
-  String(r[importIndex["Surname"]] ?? "").trim(),
-  r[importIndex["pic"]] ?? "",
-  r[importIndex["stage2"]] ?? "",
-  r[importIndex["stage4"]] ?? "",
-  "", // Status
-  "", // Comment
-  "", // EnglishFirstname
-  "", // EnglishLastname
-  "", // Birth
-  "", // University
-  "", // phone_number
-  ""  // TimestampDepa
-]);
-
-  }
-
-  if (toAppend.length) {
-    rawSh.getRange(rawSh.getLastRow() + 1, 1, toAppend.length, 15).setValues(toAppend);
-  }
-
-  return { appended: toAppend.length, skipped };
 }
