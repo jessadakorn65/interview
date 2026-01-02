@@ -435,14 +435,15 @@
         textarea {
             width: 100%;
             margin-bottom: 10px;
-            resize: none;
-            min-height: 42px;
+            resize: vertical;
+            min-height: 90px;
             border-radius: 6px;
             border: 1px solid #D1D5DB;
             padding: 8px;
-            font-size: 12px;
+            font-size: 13px;
             background: #fff;
-            color: #374151
+            color: #374151;
+            font-family: inherit;
         }
 
         .actions {
@@ -705,7 +706,7 @@
                             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                         </svg>
                     </div>
-                    <input id="idInput1" type="text" placeholder="1001, 1002...">
+                    <input id="idInput1" type="text" placeholder="ID หรือ Final เช่น 1, S93000029134">
                 </div>
 
                 <button class="primary" id="btnGo">SEARCH</button>
@@ -713,9 +714,7 @@
 
                 <div class="hint">
                     - ระบบจะแสดงการ์ดในรอบนี้ได้สูงสุด <b>5 คน</b><br />
-                    - กด Approve/Disapprove แล้วการ์ดจะหายทันที → เข้าคิวทันที<br />
-                    - คิวครบ <b>10</b> คน → ส่งขึ้นชีตอัตโนมัติ<br />
-                    - ไม่ครบ 10 แต่ค้างนาน → ส่งอัตโนมัติ (stale flush)
+                    - กด Approve/Disapprove แล้วจะบันทึกลงชีต (มีหน่วงเวลา/ล็อกกันชนให้อัตโนมัติ)<br />
                 </div>
 
                 <button class="primary" id="btnPreload">โหลดข้อมูลล่วงหน้า (ครั้งเดียว)</button>
@@ -727,8 +726,10 @@
             <div class="topbar">
                 <div class="leftTools">
                     <button class="pillBtn gray" id="btnResetRound">รีเซ็ตรอบ</button>
+                    <button class="pillBtn" style="background:#10B981; color:white;" id="btnApproveAll">Approve
+                        All</button>
                     <button class="pillBtn black" id="btnForceFlush">ส่งคิวตอนนี้</button>
-                    <span class="badge">คิว: <b id="queueCount">0</b>/10</span>
+                    <span class="badge">รอส่ง: <b id="queueCount">0</b></span>
                     <span class="badge">สถานะส่ง: <b id="sendStatus">พร้อม</b></span>
                 </div>
 
@@ -760,6 +761,19 @@
         </div>
     </div>
 
+    <!-- Custom Confirm Modal -->
+    <div class="custom-alert-overlay" id="customConfirm">
+        <div class="custom-alert-box">
+            <span class="custom-alert-icon">❓</span>
+            <div class="custom-alert-title" id="customConfirmTitle">Confirm</div>
+            <div class="custom-alert-msg" id="customConfirmMsg">Are you sure?</div>
+            <div style="display:flex; gap:10px; margin-top:24px;">
+                <button class="custom-alert-btn" id="customConfirmBtnNo" style="background:#64748B;">Cancel</button>
+                <button class="custom-alert-btn" id="customConfirmBtnYes">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         /* =========================
            CONFIG (แก้ตรงนี้)
@@ -771,7 +785,7 @@
            SETTINGS
            ========================= */
         const MAX_PER_ROUND = 5;
-        const FLUSH_AT = 10;
+        const FLUSH_AT = 1;
 
         // ✅ ไม่ครบ 10 แต่ค้างนาน -> ส่งอัตโนมัติ
         const STALE_FLUSH_MS = 3 * 60 * 1000; // 3 นาที (ปรับได้)
@@ -821,6 +835,28 @@
         if ($("customAlertBtn")) $("customAlertBtn").addEventListener("click", () => $("customAlert").classList.remove("show"));
         if ($("customAlert")) $("customAlert").addEventListener("click", (e) => {
             if (e.target === $("customAlert")) $("customAlert").classList.remove("show");
+        });
+
+        let onConfirmYes = null;
+        function showConfirm(title, msg, onYes) {
+            const t = $("customConfirmTitle");
+            const m = $("customConfirmMsg");
+            const box = $("customConfirm");
+            if (t && m && box) {
+                t.textContent = title || "Confirm";
+                m.innerHTML = msg || "";
+                onConfirmYes = onYes;
+                box.classList.add("show");
+            }
+        }
+        function hideConfirm() {
+            $("customConfirm").classList.remove("show");
+            onConfirmYes = null;
+        }
+        if ($("customConfirmBtnNo")) $("customConfirmBtnNo").addEventListener("click", hideConfirm);
+        if ($("customConfirmBtnYes")) $("customConfirmBtnYes").addEventListener("click", () => {
+            if (onConfirmYes) onConfirmYes();
+            hideConfirm();
         });
         function setMsg(elId, type, text) {
             const el = $(elId); if (!el) return;
@@ -949,9 +985,16 @@
             const map = {};
             for (const row of rows) {
                 if (!row) continue;
+
                 const idVal = row.ID ?? row.Id ?? row.id;
-                if (idVal == null) continue;
-                map[String(idVal).trim()] = row;
+                const finalVal = row.Final ?? row.final ?? row["/Final"];
+
+                if (idVal != null && String(idVal).trim() !== "") {
+                    map[String(idVal).trim()] = row;
+                }
+                if (finalVal != null && String(finalVal).trim() !== "") {
+                    map[String(finalVal).trim()] = row;
+                }
             }
             dbMap = map;
             saveDbToStorage(map);
@@ -1011,21 +1054,7 @@
             return data;
         }
 
-        async function apiForceFlush(force) {
-            const url = `${GAS_BASE}?action=flush&force=${force ? 1 : 0}&${noCache()}`;
-            const r = await fetch(url, { method: "GET", cache: "no-store" });
-            const ct = (r.headers.get("content-type") || "").toLowerCase();
-            if (!ct.includes("application/json")) {
-                const t = await r.text().catch(() => "");
-                throw new Error(`FLUSH FAIL: non-JSON (${r.status}) ${t.slice(0, 200)}`);
-            }
-            const data = await r.json().catch(() => null);
-            if (!r.ok || !data || data.ok !== true) {
-                const e = new Error(`FLUSH FAIL: ${r.status} ${data?.error || ""}`);
-                e.code = r.status; throw e;
-            }
-            return data;
-        }
+
 
         /* =========================
            Parsing IDs
@@ -1150,170 +1179,44 @@
             return { imageUrl: "", fallbackUrl: "", fileId: "" };
         }
 
-        /* =========================
-           Age Calculation & University Helpers
-           ========================= */
-        // อ้างอิงอายุ ณ วันที่ 28 มีนาคม 2569 (พ.ศ.) = 2026-03-28 (ค.ศ.)
-        const AGE_REF_DATE = new Date(2026, 2, 28); // month 0-index => 2 = March
 
-        function beToCeYear(y) {
-            const n = Number(y);
-            if (!isFinite(n)) return NaN;
-            return (n >= 2400) ? (n - 543) : n;
-        }
-
-        function parseBirthAny(v) {
-            if (!v) return null;
-
-            // ถ้าเป็น Date object จริง
-            if (v instanceof Date && !isNaN(v.getTime())) return v;
-
-            let s = String(v).trim();
-            if (!s) return null;
-
-            // ISO เช่น 2550-10-22T17:00:00.000Z  -> ตัดเวลา
-            if (s.includes("T")) s = s.slice(0, 10);
-
-            // ✅ รองรับ YYYY-MM-DD (และปีอาจเป็น พ.ศ.)
-            let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-            if (m) {
-                const y = beToCeYear(m[1]);   // <-- แปลง พ.ศ. -> ค.ศ. ถ้าปี >= 2400
-                const mo = Number(m[2]);
-                const d = Number(m[3]);
-                const dt = new Date(y, mo - 1, d);
-                return isNaN(dt) ? null : dt;
-            }
-
-            // 28/06/2551 หรือ 28-06-2551
-            m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
-            if (m) {
-                const d = Number(m[1]);
-                const mo = Number(m[2]);
-                const y = beToCeYear(m[3]);
-                const dt = new Date(y, mo - 1, d);
-                return isNaN(dt) ? null : dt;
-            }
-
-            // 5ตุลาคม2547 หรือ 5 ตุลาคม 2547
-            const TH_MONTH = {
-                "มกราคม": 1, "กุมภาพันธ์": 2, "มีนาคม": 3, "เมษายน": 4, "พฤษภาคม": 5, "มิถุนายน": 6,
-                "กรกฎาคม": 7, "สิงหาคม": 8, "กันยายน": 9, "ตุลาคม": 10, "พฤศจิกายน": 11, "ธันวาคม": 12,
-                "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6, "ก.ค.": 7, "ส.ค.": 8,
-                "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12
-            };
-
-            const s2 = s.replace(/\s+/g, "");
-            m = s2.match(/^(\d{1,2})(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม|ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)(\d{2,4})$/);
-            if (m) {
-                const d = Number(m[1]);
-                const mo = TH_MONTH[m[2]];
-                const y = beToCeYear(m[3]);
-                const dt = new Date(y, mo - 1, d);
-                return isNaN(dt) ? null : dt;
-            }
-
-            return null;
-        }
-
-        function calcAgeYMD(birthDate, refDate) {
-            if (!birthDate || !refDate) return null;
-
-            let y = refDate.getFullYear() - birthDate.getFullYear();
-            let m = refDate.getMonth() - birthDate.getMonth();
-            let d = refDate.getDate() - birthDate.getDate();
-
-            if (d < 0) {
-                // ยืมวันจากเดือนก่อน
-                const prevMonthLastDay = new Date(refDate.getFullYear(), refDate.getMonth(), 0).getDate();
-                d += prevMonthLastDay;
-                m -= 1;
-            }
-            if (m < 0) {
-                m += 12;
-                y -= 1;
-            }
-            if (y < 0) return null;
-
-            return { years: y, months: m, days: d, text: `${y} ปี ${m} เดือน ${d} วัน` };
-        }
-
-        // ✅ แยกประเทศจาก University code เช่น ODOS2USA01 - ...
-        function countryFromUniversity(univRaw) {
-            const s = String(univRaw || "");
-            const mm = s.match(/ODOS2([A-Z]{3})\d{2}/i); // USA, CAN, FIN...
-            if (!mm) return "";
-            const code3 = mm[1].toUpperCase();
-            const map3to2 = {
-                USA: "US", CAN: "CA", FIN: "FI", GBR: "GB", CHN: "CN", JPN: "JP", KOR: "KR", SIN: "SG", AUS: "AU"
-            };
-            return map3to2[code3] || "";
-        }
-
-        function flagUrlFromISO2(iso2) {
-            if (!iso2) return "";
-            return `https://flagcdn.com/w40/${iso2.toLowerCase()}.png`;
-        }
 
         /* =========================
            Render Cards
            ========================= */
         function renderCard(student) {
-            const id = String(pick(student, ["ID", "Id", "id"], "")).trim();
-            if (!id) return;
+            const key = String(pick(student, ["ID", "Id", "Final", "/Final"], "")).trim();
+            if (!key) return;
 
             const container = $("cards");
 
-            // English Name
-            const enFirst = pick(student, ["EnglishFirstname", "englishFirstname", "EnglishFirstName", "English_Firstname"], "");
-            const enLast = pick(student, ["EnglishLastname", "englishLastname", "EnglishLastName", "English_Lastname"], "");
+            const displayId = String(pick(student, ["ID", "Id"], "-")).trim();
+            const finalVal = pick(student, ["Final", "/Final"], "-");
+            const titleName = pick(student, ["TitleName"], "");
+
+            const thFirst = pick(student, ["ThaiFirstname"], "-");
+            const thLast = pick(student, ["ThaiLastname"], "-");
+
+            const enFirst = pick(student, ["EnglishFirstname"], "-");
+            const enLast = pick(student, ["EnglishLastname"], "-");
             const enName = `${enFirst} ${enLast}`.trim() || "-";
 
-            // Thai Name
-            const thFirst = pick(student, ["ThaiFirstname", "thaiFirstname", "ThaiFirstName", "Name", "name"], "-");
-            const thLast = pick(student, ["ThaiLastname", "thaiLastname", "ThaiLastName", "Surname", "surname"], "-");
+            const birth = pick(student, ["Birth"], "-");
+            const birthDmy = pick(student, ["Birth_DDMMYYYY"], "-");
+            const university = pick(student, ["University"], "-");
 
-            // Info Fields
-            const studentId = pick(student, ["StudentID", "StudentId", "studentID", "student_id"], "-");
-
-            // New Fields Logic
-            const birthRaw = pick(student, ["Birth", "birth", "BirthDate"], "");
-            const university = pick(student, ["University", "university"], "-");
-            const phone = pick(student, ["phone_number", "Phone_Number", "PhoneNumber", "Tel", "tel"], "-");
-
-            const birthDate = parseBirthAny(birthRaw);
-            const age = birthDate ? calcAgeYMD(birthDate, AGE_REF_DATE) : null;
-
-            const birthShow = (birthRaw && String(birthRaw).includes("T"))
-                ? String(birthRaw).slice(0, 10)
-                : String(birthRaw || "-");
-
-            // ประเทศ/ธง (เอาจาก University เป็นหลัก)
-            const iso2 = countryFromUniversity(university) || countryToISO2(pick(student, ["Country", "country"], ""));
-            const flagUrl = flagUrlFromISO2(iso2);
-
-            const province = pick(student, ["Province", "province", "Prov", "prov"], "-");
-            const subDistrict = pick(student, ["Sub_district", "Sub_District", "sub_district", "SubDistrict"], "-");
-
-            // Images
-            const imgRaw = pick(student, ["Image", "image", "Photo", "photo", "pic"], "");
-            const imgFallbackFromServer = pick(student, ["ImageFallback", "fallbackUrl"], "");
-            const imgObj = normalizeImageSrc(imgRaw);
-
-            const img = imgObj.imageUrl || "";
-            const imgFallback = (imgFallbackFromServer && String(imgFallbackFromServer).trim())
-                ? String(imgFallbackFromServer).trim()
-                : (imgObj.fallbackUrl || "");
-
-            // Status & Comment
-            const commentDefault = pick(student, ["Comment", "comment"], "");
-            const status = pick(student, ["Status", "status"], "");
+            const status = pick(student, ["Status"], "");
+            const commentDefault = pick(student, ["Comment"], "");
             const isDone = (status === "Approve" || status === "Disapprove");
+
+            const img = String(pick(student, ["Image"], "")).trim();
+            const imgFallback = String(pick(student, ["ImageFallback"], "")).trim();
 
             const el = document.createElement("div");
             el.className = "card";
-            el.id = "card-" + id;
+            el.id = "card-" + key;
 
-            let statusText = "สถานะ : รอสัมภาษณ์";
+            let statusText = "สถานะ : รอพิจารณา";
             let stripStyle = "";
             if (status === "Approve") {
                 statusText = "สถานะ : ผ่าน";
@@ -1326,7 +1229,7 @@
             const userIconHtml = `<div class="userIcon" aria-label="User"></div>`;
             const avatarHtml = img
                 ? `<div class="avatar"><img loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(img)}" alt="img"
-                    onerror="${imgFallback
+        onerror="${imgFallback
                     ? `this.onerror=null; this.src='${escapeHtml(imgFallback)}';`
                     : `this.parentElement.outerHTML='${userIconHtml.replace(/"/g, "&quot;")}'`
                 }"></div>`
@@ -1337,25 +1240,25 @@
     <div class="cardHeader">
       ${avatarHtml}
       <div class="headerName">${escapeHtml(enName)}</div>
-      <div class="headerFlag">
-        ${flagUrl ? `<img class="flagImg" src="${flagUrl}" alt="${escapeHtml(iso2)}" onerror="this.style.display='none'">` : ""}
-        ${iso2 ? `<span>${escapeHtml(iso2)}</span>` : `<span>🌐</span>`}
-      </div>
     </div>
 
     <div class="statusStrip" style="${stripStyle}">${statusText}</div>
 
     <div class="cardBody">
-      <div class="dataRow"><span class="dataLabel">ID:</span><span class="dataValue">${escapeHtml(id)}</span></div>
-      ${studentId && studentId !== "-" ? `<div class="dataRow"><span class="dataLabel">Student ID:</span><span class="dataValue">${escapeHtml(studentId)}</span></div>` : ""}
-      
-      <div class="dataRow"><span class="dataLabel">Thai Name:</span><span class="dataValue">${escapeHtml(thFirst)} ${escapeHtml(thLast)}</span></div>
-      
-      <div class="dataRow"><span class="dataLabel">Birth:</span><span class="dataValue">${escapeHtml(birthShow)}</span></div>
-      <div class="dataRow"><span class="dataLabel">Age:</span><span class="dataValue">${escapeHtml(age ? age.text : "-")}</span></div>
-      
-      <div class="dataRow"><span class="dataLabel">University:</span><span class="dataValue">${escapeHtml(university)}</span></div>
-      <div class="dataRow"><span class="dataLabel">Phone:</span><span class="dataValue">${escapeHtml(phone)}</span></div>
+      <div class="dataRow"><span class="dataLabel">ID:</span><span class="dataValue">${escapeHtml(displayId)}</span></div>
+      <div class="dataRow"><span class="dataLabel">Final:</span><span class="dataValue">${escapeHtml(finalVal)}</span></div>
+      <div class="dataRow"><span class="dataLabel">Title:</span><span class="dataValue">${escapeHtml(titleName || "-")}</span></div>
+
+      <div class="divider"></div>
+
+      <div class="dataRow"><span class="dataLabel">TH:</span><span class="dataValue">${escapeHtml(thFirst)} ${escapeHtml(thLast)}</span></div>
+      <div class="dataRow"><span class="dataLabel">EN:</span><span class="dataValue">${escapeHtml(enName)}</span></div>
+
+      <div class="divider"></div>
+
+      <div class="dataRow"><span class="dataLabel">Birth:</span><span class="dataValue">${escapeHtml(birth)}</span></div>
+      <div class="dataRow"><span class="dataLabel">Birth(DMY):</span><span class="dataValue">${escapeHtml(birthDmy)}</span></div>
+      <div class="dataRow"><span class="dataLabel">Univ:</span><span class="dataValue">${escapeHtml(university)}</span></div>
 
       <div class="divider"></div>
 
@@ -1377,21 +1280,21 @@
         </div>
       </div>
 
-       <div class="actions ${isDone ? '' : 'd-none'}" data-role="actions-edit">
-            <div class="actionGroup" data-role="edit">
-              <button class="circleBtn editBtn" type="button">
-                 <svg fill="white" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
-              </button>
-              <span class="btnLabel">แก้ไขคะแนน</span>
-            </div>
+      <div class="actions ${isDone ? '' : 'd-none'}" data-role="actions-edit">
+        <div class="actionGroup" data-role="edit">
+          <button class="circleBtn editBtn" type="button">
+            <svg fill="white" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
+          <span class="btnLabel">แก้ไข</span>
+        </div>
       </div>
     </div>
   `;
 
-            el.querySelector(".xTop").addEventListener("click", () => removeFromRound(id));
-            el.querySelector('.actionGroup[data-role="approve"]').addEventListener("click", () => submitScore(id, "Approve"));
-            el.querySelector('.actionGroup[data-role="disapprove"]').addEventListener("click", () => submitScore(id, "Disapprove"));
-            el.querySelector('.actionGroup[data-role="edit"]').addEventListener("click", () => enableEditMode(id));
+            el.querySelector(".xTop").addEventListener("click", () => removeFromRound(key));
+            el.querySelector('.actionGroup[data-role="approve"]').addEventListener("click", () => submitScore(key, "Approve"));
+            el.querySelector('.actionGroup[data-role="disapprove"]').addEventListener("click", () => submitScore(key, "Disapprove"));
+            el.querySelector('.actionGroup[data-role="edit"]').addEventListener("click", () => enableEditMode(key));
 
             container.appendChild(el);
         }
@@ -1400,7 +1303,14 @@
            กดคะแนน -> เข้าคิว + ลบการ์ด
            ========================= */
 
-        function submitScore(id, status) {
+        function submitScore(id, status, skipConfirm = false) {
+            if (!skipConfirm) {
+                showConfirm("ยืนยันผลการประเมิน", `บันทึกสถานะ <b>${status}</b> หรือไม่?`, () => {
+                    submitScore(id, status, true);
+                });
+                return;
+            }
+
             const card = $("card-" + id);
             if (!card) return;
 
@@ -1512,9 +1422,8 @@
 
             for (const id of ids) {
                 if (roundCards.size >= MAX_PER_ROUND) { skipped++; continue; }
+                // ถ้าพิมพ์ซ้ำ "ค่าที่พิมพ์" ก็กันไว้ก่อน (เช่นกดค้นซ้ำ)
                 if (roundCards.has(id)) {
-                    const existing = roundCards.get(id);
-                    // ถ้ามีอยู่แล้วให้ scroll ไปหา
                     const exEl = $("card-" + id);
                     if (exEl) exEl.scrollIntoView({ behavior: "smooth", block: "center" });
                     toast(`⚠️ ID ${id} มีอยู่แล้ว`);
@@ -1523,17 +1432,23 @@
 
                 try {
                     const s = await apiSearchById(id);
-                    if (!s) {
-                        notFound++;
-                        missingIds.push(id);
+                    if (!s) { notFound++; missingIds.push(id); continue; }
+
+                    const key = String(pick(s, ["ID"], "")).trim();
+                    if (!key) { notFound++; missingIds.push(id); continue; }
+
+                    if (roundCards.has(key)) {
+                        const exEl = $("card-" + key);
+                        if (exEl) exEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                        toast(`⚠️ ID ${key} มีอยู่แล้ว`);
                         continue;
                     }
-                    roundCards.set(String(s.ID ?? id), { student: s });
+
+                    roundCards.set(key, { student: s });
                     renderCard(s);
                     added++;
                 } catch (e) {
-                    notFound++;
-                    missingIds.push(id);
+                    notFound++; missingIds.push(id);
                 }
             }
 
@@ -1554,6 +1469,19 @@
             roundCards.clear();
             updateCounters();
             setMsg("msg2", "", "รีเซ็ตรอบแล้ว");
+        }
+
+        async function approveAll() {
+            if (roundCards.size === 0) return toast("ไม่มีรายชื่อในรอบนี้");
+
+            const count = roundCards.size;
+            showConfirm("ยืนยัน Approve All", `ต้องการให้สถานะ <b>Approve ทั้งหมด (${count} คน)</b> ใช่หรือไม่?`, async () => {
+                const keys = Array.from(roundCards.keys());
+                for (const key of keys) {
+                    submitScore(key, "Approve", true);
+                    await sleep(150);
+                }
+            });
         }
 
         /* =========================
@@ -1664,19 +1592,14 @@
         $("idInput2").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnAdd").click(); });
 
         $("btnResetRound").addEventListener("click", resetRound);
+        $("btnApproveAll").addEventListener("click", approveAll);
         $("btnForceFlush").addEventListener("click", async () => {
             try {
                 statusText("กำลังส่งคิวในเครื่อง...");
                 await flushQueue(true);
-
-                statusText("กำลังสั่งหลังบ้าน flush...");
-                const res = await apiForceFlush(true);
-                handleServerFlushInfo(res, "manual_flush");
-
                 statusText("พร้อม");
             } catch (e) {
-                toast("สั่ง flush ไม่สำเร็จ: " + (e?.message || "ลองใหม่"));
-                debugLog("btnForceFlush:error", e?.message || e);
+                toast("ส่งไม่สำเร็จ: " + (e?.message || "ลองใหม่"));
                 statusText("พัง/ลองใหม่");
             }
         });
